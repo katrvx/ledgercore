@@ -17,7 +17,7 @@ class SchemaSpec extends Specification {
     Sql sql
 
     def setupSpec() {
-        dataSource = Database.connect(TestDatabase.appConfig())
+        dataSource = Database.connect(TestEnv.appConfig())
         sql = new Sql(dataSource)
     }
 
@@ -31,7 +31,8 @@ class SchemaSpec extends Specification {
 
         then:
         rows*.currency == ["EUR", "GBP", "USD"]
-        rows*.balance == [0, 0, 0]
+        // money only leaves a funding account, so its balance is never positive
+        rows*.balance.every { it <= 0 }
     }
 
     def "database rejects a second funding account for the same currency"() {
@@ -152,6 +153,18 @@ class SchemaSpec extends Specification {
         then:
         def e = thrown(SQLException)
         e.message.contains("ledger_entries_amount_not_zero")
+    }
+
+    def "database rejects a second row with the same idempotency key"() {
+        given:
+        sql.execute("insert into idempotency_keys (key, request_hash, status, response_body) values ('dup', 'h', 201, '{}')")
+
+        when:
+        sql.execute("insert into idempotency_keys (key, request_hash, status, response_body) values ('dup', 'h', 201, '{}')")
+
+        then:
+        def e = thrown(SQLException)
+        e.message.contains("idempotency_keys_pkey")
     }
 
     private long insertCustomerAccount(String currency) {

@@ -2,7 +2,7 @@ package com.ledgercore.transfer
 
 import com.ledgercore.App
 import com.ledgercore.TestClient
-import com.ledgercore.TestDatabase
+import com.ledgercore.TestEnv
 import com.ledgercore.config.Database
 import com.zaxxer.hikari.HikariDataSource
 import groovy.json.JsonSlurper
@@ -31,9 +31,9 @@ class TransferApiSpec extends Specification {
     long bob
 
     def setupSpec() {
-        app = App.start(TestDatabase.appConfig())
+        app = App.start(TestEnv.appConfig())
         client = new TestClient(app.port())
-        dataSource = Database.connect(TestDatabase.appConfig())
+        dataSource = Database.connect(TestEnv.appConfig())
         sql = new Sql(dataSource)
     }
 

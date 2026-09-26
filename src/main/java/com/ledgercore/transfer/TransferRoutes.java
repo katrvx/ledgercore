@@ -2,6 +2,8 @@ package com.ledgercore.transfer;
 
 import com.ledgercore.http.Json;
 import com.ledgercore.http.PathId;
+import com.ledgercore.idempotency.IdempotencyService;
+import com.ledgercore.idempotency.StoredResponse;
 import spark.Request;
 import spark.Response;
 import spark.Service;
@@ -9,9 +11,11 @@ import spark.Service;
 public class TransferRoutes {
 
     private final TransferService transfers;
+    private final IdempotencyService idempotency;
 
-    public TransferRoutes(TransferService transfers) {
+    public TransferRoutes(TransferService transfers, IdempotencyService idempotency) {
         this.transfers = transfers;
+        this.idempotency = idempotency;
     }
 
     public void register(Service http) {
@@ -23,13 +27,15 @@ public class TransferRoutes {
 
     private String create(Request request, Response response) {
         CreateTransferRequest body = Json.read(request.bodyAsBytes(), CreateTransferRequest.class);
-        return created(response, transfers.transfer(body));
+        StoredResponse result = idempotency.run(request, tx -> created(transfers.transfer(tx, body)));
+        return reply(response, result);
     }
 
     private String deposit(Request request, Response response) {
         long accountId = PathId.parse(request.params("id"), "account id");
         DepositRequest body = Json.read(request.bodyAsBytes(), DepositRequest.class);
-        return created(response, transfers.deposit(accountId, body));
+        StoredResponse result = idempotency.run(request, tx -> created(transfers.deposit(tx, accountId, body)));
+        return reply(response, result);
     }
 
     private String get(Request request, Response response) {
@@ -38,10 +44,17 @@ public class TransferRoutes {
         return Json.write(transfer);
     }
 
-    private String created(Response response, Transfer transfer) {
-        response.status(201);
-        response.type("application/json");
-        response.header("Location", "/transfers/" + transfer.id());
-        return Json.write(transfer);
+    private StoredResponse created(Transfer transfer) {
+        return new StoredResponse(201, "/transfers/" + transfer.id(), Json.write(transfer));
+    }
+
+    // a replayed response looks exactly like the first one, including the Location header
+    private String reply(Response response, StoredResponse stored) {
+        response.status(stored.status());
+        response.type(stored.status() < 400 ? "application/json" : "application/problem+json");
+        if (stored.location() != null) {
+            response.header("Location", stored.location());
+        }
+        return stored.body();
     }
 }

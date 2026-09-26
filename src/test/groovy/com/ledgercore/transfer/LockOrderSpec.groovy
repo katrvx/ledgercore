@@ -1,6 +1,6 @@
 package com.ledgercore.transfer
 
-import com.ledgercore.TestDatabase
+import com.ledgercore.TestEnv
 import com.ledgercore.config.Database
 import com.zaxxer.hikari.HikariDataSource
 import groovy.sql.Sql
@@ -31,7 +31,7 @@ class LockOrderSpec extends Specification {
     long higher
 
     def setupSpec() {
-        dataSource = Database.connect(TestDatabase.appConfig())
+        dataSource = Database.connect(TestEnv.appConfig())
         sql = new Sql(dataSource)
     }
 

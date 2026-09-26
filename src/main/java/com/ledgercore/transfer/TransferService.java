@@ -10,51 +10,44 @@ import com.ledgercore.http.ValidationException;
 import com.ledgercore.ledger.LedgerRepository;
 import org.jooq.DSLContext;
 
+// the caller opens the transaction and passes it in, so the idempotency row can join it
 public class TransferService {
 
-    private final DSLContext db;
     private final AccountRepository accounts;
     private final TransferRepository transfers;
     private final LedgerRepository ledger;
 
-    public TransferService(DSLContext db, AccountRepository accounts, TransferRepository transfers, LedgerRepository ledger) {
-        this.db = db;
+    public TransferService(AccountRepository accounts, TransferRepository transfers, LedgerRepository ledger) {
         this.accounts = accounts;
         this.transfers = transfers;
         this.ledger = ledger;
     }
 
     // moves money between two customer accounts
-    public Transfer transfer(CreateTransferRequest request) {
+    public Transfer transfer(DSLContext tx, CreateTransferRequest request) {
         validate(request);
         long fromId = request.fromAccountId();
         long toId = request.toAccountId();
         if (fromId == toId) {
             throw new UnprocessableException("fromAccountId and toAccountId must be different");
         }
-        return db.transactionResult(trx -> {
-            DSLContext tx = trx.dsl();
-            LockedAccounts locked = lockInIdOrder(tx, fromId, toId);
-            requireCustomer(locked.from());
-            requireCustomer(locked.to());
-            requireCurrency(locked.from(), locked.to(), request.currency());
-            return move(tx, locked.from(), locked.to(), request.amount());
-        });
+        LockedAccounts locked = lockInIdOrder(tx, fromId, toId);
+        requireCustomer(locked.from());
+        requireCustomer(locked.to());
+        requireCurrency(locked.from(), locked.to(), request.currency());
+        return move(tx, locked.from(), locked.to(), request.amount());
     }
 
     // a deposit is a transfer from the funding account of the same currency
-    public Transfer deposit(long accountId, DepositRequest request) {
+    public Transfer deposit(DSLContext tx, long accountId, DepositRequest request) {
         validate(request);
         Account account = accounts.findById(accountId)
                 .orElseThrow(() -> new NotFoundException("account " + accountId + " not found"));
         requireCustomer(account);
         Account funding = accounts.findFunding(account.currency())
                 .orElseThrow(() -> new IllegalStateException("no funding account for " + account.currency()));
-        return db.transactionResult(trx -> {
-            DSLContext tx = trx.dsl();
-            LockedAccounts locked = lockInIdOrder(tx, funding.id(), account.id());
-            return move(tx, locked.from(), locked.to(), request.amount());
-        });
+        LockedAccounts locked = lockInIdOrder(tx, funding.id(), account.id());
+        return move(tx, locked.from(), locked.to(), request.amount());
     }
 
     public Transfer get(long id) {

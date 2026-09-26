@@ -1,5 +1,7 @@
 package com.ledgercore.http;
 
+import com.ledgercore.config.Redis;
+import io.lettuce.core.RedisException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Service;
@@ -13,9 +15,14 @@ public class HealthRoutes {
     private static final Logger log = LoggerFactory.getLogger(HealthRoutes.class);
 
     private final DataSource dataSource;
+    private final Redis redis;
 
-    public HealthRoutes(DataSource dataSource) {
+    public HealthRoutes(DataSource dataSource, Redis redis) {
         this.dataSource = dataSource;
+        this.redis = redis;
+    }
+
+    private record Readiness(String status, String database, String redis) {
     }
 
     public void register(Service http) {
@@ -25,13 +32,15 @@ public class HealthRoutes {
             return "{\"status\":\"UP\"}";
         });
 
+        // without redis the app still works, only slower, so only the database decides
         http.get("/ready", (req, res) -> {
+            boolean databaseUp = databaseIsUp();
+            boolean redisUp = redisIsUp();
             res.type("application/json");
-            if (databaseIsUp()) {
-                return "{\"status\":\"UP\"}";
+            if (!databaseUp) {
+                res.status(503);
             }
-            res.status(503);
-            return "{\"status\":\"DOWN\"}";
+            return Json.write(new Readiness(upOrDown(databaseUp), upOrDown(databaseUp), upOrDown(redisUp)));
         });
     }
 
@@ -42,5 +51,18 @@ public class HealthRoutes {
             log.warn("database is not reachable: {}", e.getMessage());
             return false;
         }
+    }
+
+    private boolean redisIsUp() {
+        try {
+            return "PONG".equals(redis.commands().ping());
+        } catch (RedisException e) {
+            log.warn("redis is not reachable: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private String upOrDown(boolean up) {
+        return up ? "UP" : "DOWN";
     }
 }

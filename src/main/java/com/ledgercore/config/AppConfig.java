@@ -1,16 +1,17 @@
 package com.ledgercore.config;
 
-public record AppConfig(int port, String databaseUrl, String databaseUser, String databasePassword) {
+public record AppConfig(int port, String databaseUrl, String databaseUser, String databasePassword, String redisUrl) {
 
     public static AppConfig fromEnv() {
         return new AppConfig(
                 Integer.parseInt(optional("PORT", "8080")),
                 required("DATABASE_URL"),
                 required("DATABASE_USER"),
-                required("DATABASE_PASSWORD"));
+                required("DATABASE_PASSWORD"),
+                required("REDIS_URL"));
     }
 
-    // keeps the password out of logs
+    // keeps the database password and the redis url (it may hold a password) out of logs
     @Override
     public String toString() {
         return "AppConfig[port=" + port + ", databaseUrl=" + databaseUrl + ", databaseUser=" + databaseUser + "]";

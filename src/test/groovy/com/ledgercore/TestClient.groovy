@@ -21,12 +21,19 @@ class TestClient {
         client.send(request, HttpResponse.BodyHandlers.ofString())
     }
 
+    // every post gets a fresh idempotency key unless the test passes its own
     HttpResponse<String> post(String path, String body) {
-        def request = HttpRequest.newBuilder(URI.create(baseUrl + path))
+        post(path, body, UUID.randomUUID().toString())
+    }
+
+    HttpResponse<String> post(String path, String body, String idempotencyKey) {
+        def builder = HttpRequest.newBuilder(URI.create(baseUrl + path))
                 .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build()
-        client.send(request, HttpResponse.BodyHandlers.ofString())
+        if (idempotencyKey != null) {
+            builder.header("Idempotency-Key", idempotencyKey)
+        }
+        client.send(builder.build(), HttpResponse.BodyHandlers.ofString())
     }
 }

@@ -2,7 +2,7 @@ package com.ledgercore.account
 
 import com.ledgercore.App
 import com.ledgercore.TestClient
-import com.ledgercore.TestDatabase
+import com.ledgercore.TestEnv
 import groovy.json.JsonSlurper
 import spock.lang.Shared
 import spock.lang.Specification
@@ -19,7 +19,7 @@ class AccountApiSpec extends Specification {
     JsonSlurper json = new JsonSlurper()
 
     def setupSpec() {
-        app = App.start(TestDatabase.appConfig())
+        app = App.start(TestEnv.appConfig())
         client = new TestClient(app.port())
     }
 

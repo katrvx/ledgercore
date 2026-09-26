@@ -30,6 +30,7 @@ dependencies {
     implementation("org.flywaydb:flyway-core:$flywayVersion")
     implementation("org.flywaydb:flyway-database-postgresql:$flywayVersion")
     implementation("org.jooq:jooq:$jooqVersion")
+    implementation("io.lettuce:lettuce-core:7.8.0.RELEASE")
 
     jooqCodegen("org.jooq:jooq-meta-extensions:$jooqVersion")
 

@@ -3,6 +3,7 @@ package com.ledgercore.http;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.exc.MismatchedInputException;
 import tools.jackson.databind.exc.UnrecognizedPropertyException;
 import tools.jackson.databind.json.JsonMapper;
@@ -14,6 +15,7 @@ public class Json {
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
             .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+            .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
             .build();
 
     // bad json from a client becomes a 400, not a 500
@@ -34,5 +36,11 @@ public class Json {
 
     public static String write(Object value) {
         return MAPPER.writeValueAsString(value);
+    }
+
+    // the same json with reordered fields or other whitespace gives the same string
+    public static String canonical(byte[] body) {
+        Object tree = read(body, Object.class);
+        return MAPPER.writeValueAsString(tree);
     }
 }
