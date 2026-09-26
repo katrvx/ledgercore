@@ -2,7 +2,12 @@ openapi: 3.1.0
 info:
   title: LedgerCore
   version: 0.1.0
-  description: Accounts and money transfers with double-entry bookkeeping. All amounts are in minor units (for example cents for EUR).
+  description: |
+    Accounts and money transfers with double-entry bookkeeping. All amounts are in minor units (for example cents for EUR).
+    Every response has an X-Request-Id header. It is the X-Request-Id sent by the client when that is 1 to 64 letters,
+    digits, dots, underscores or dashes, otherwise a new UUID. The same id is in every log line about the request and
+    in every problem body. Every error is application/problem+json, including unknown routes (404).
+    A wrong method on a known path is also a 404. POST bodies must be application/json and at most 16384 bytes.
 
 servers:
   - url: http://localhost:8080
@@ -16,6 +21,8 @@ paths:
       operationId: health
       summary: Liveness check, does not touch the database
       responses:
+        "500":
+          $ref: "#/components/responses/InternalError"
         "200":
           description: The process is running
           content:
@@ -29,6 +36,8 @@ paths:
       summary: Readiness check, fails only when the database is not reachable
       description: Without Redis the service still works, only the idempotency fast path is gone, so a Redis outage is reported but does not fail readiness.
       responses:
+        "500":
+          $ref: "#/components/responses/InternalError"
         "200":
           description: Ready to take traffic
           content:
@@ -53,6 +62,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateAccountRequest"
       responses:
+        "500":
+          $ref: "#/components/responses/InternalError"
         "201":
           description: Account created
           headers:
@@ -67,6 +78,10 @@ paths:
                 $ref: "#/components/schemas/Account"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/ContentTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
 
   /accounts/{id}:
     get:
@@ -75,12 +90,53 @@ paths:
       parameters:
         - $ref: "#/components/parameters/AccountId"
       responses:
+        "500":
+          $ref: "#/components/responses/InternalError"
         "200":
           description: The account
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Account"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /accounts/{id}/transactions:
+    get:
+      operationId: listTransactions
+      summary: History of an account, newest first, one page at a time
+      description: |
+        Each item is one ledger entry of the account: negative when money left it, positive when money came in.
+        Only completed transfers have ledger entries, so transfers in review or declined are not listed.
+        Pages use a cursor: pass nextCursor from the previous page to get the next one. New transfers made
+        between two requests don't shift or repeat entries on later pages.
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque value from nextCursor of the previous page
+          schema:
+            type: string
+      responses:
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "200":
+          description: One page of the account history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionPage"
         "400":
           $ref: "#/components/responses/BadRequest"
         "404":
@@ -101,6 +157,8 @@ paths:
             schema:
               $ref: "#/components/schemas/DepositRequest"
       responses:
+        "500":
+          $ref: "#/components/responses/InternalError"
         "201":
           description: Deposit completed, or the saved response of the first request with this key
           headers:
@@ -115,6 +173,10 @@ paths:
                 $ref: "#/components/schemas/Transfer"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/ContentTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -141,6 +203,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateTransferRequest"
       responses:
+        "500":
+          $ref: "#/components/responses/InternalError"
         "201":
           description: Transfer completed, or the saved response of the first request with this key
           headers:
@@ -167,6 +231,10 @@ paths:
                 $ref: "#/components/schemas/Transfer"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/ContentTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
@@ -192,6 +260,8 @@ paths:
             format: int64
             minimum: 1
       responses:
+        "500":
+          $ref: "#/components/responses/InternalError"
         "200":
           description: The transfer
           content:
@@ -219,7 +289,7 @@ components:
       in: header
       required: true
       description: |
-        Unique per request, for example a UUID. The same key with the same method, path and JSON body
+        Unique per request, for example a UUID, made of visible ASCII characters only. The same key with the same method, path and JSON body
         (field order and whitespace do not matter) replays the first response. The same key with a
         different request is rejected with 422. A key is kept for 24 hours in Redis and permanently in the database.
       schema:
@@ -297,6 +367,50 @@ components:
           format: date-time
           description: Always in UTC
           example: "2026-09-26T10:20:56.003403Z"
+
+    LedgerEntry:
+      type: object
+      required: [entryId, transferId, counterpartyAccountId, amount, currency, createdAt]
+      properties:
+        entryId:
+          type: integer
+          format: int64
+          example: 311
+        transferId:
+          type: integer
+          format: int64
+          example: 7
+        counterpartyAccountId:
+          type: integer
+          format: int64
+          description: The account on the other side of the transfer
+          example: 43
+        amount:
+          type: integer
+          format: int64
+          description: Signed amount in minor units, negative when money left the account
+          example: -2500
+        currency:
+          type: string
+          example: EUR
+        createdAt:
+          type: string
+          format: date-time
+          description: Always in UTC
+          example: "2026-09-26T10:21:03.118220Z"
+
+    TransactionPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerEntry"
+        nextCursor:
+          type: [string, "null"]
+          description: Cursor for the next page, null on the last page
+          example: MzEx
 
     DepositRequest:
       type: object
@@ -387,6 +501,10 @@ components:
         detail:
           type: string
           example: currency JPY is not supported
+        requestId:
+          type: string
+          description: Id of the request that produced this problem, for support. Saved idempotent responses are replayed exactly as they were first sent, so they don't have it.
+          example: 7f0c2f4e-3b1a-4d7e-9a61-2f1c9d3e8b10
 
   responses:
     BadRequest:
@@ -403,6 +521,24 @@ components:
             $ref: "#/components/schemas/Problem"
     Conflict:
       description: A request with the same Idempotency-Key is still being handled, retry in a moment
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ContentTooLarge:
+      description: The request body is larger than 16384 bytes
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnsupportedMediaType:
+      description: The request body is not sent as application/json (parameters like charset and any letter case are fine)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InternalError:
+      description: A bug on our side. The body only says "internal error" and gives the requestId, the details are in our logs.
       content:
         application/problem+json:
           schema:
