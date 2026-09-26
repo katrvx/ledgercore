@@ -1,38 +1,32 @@
 package com.ledgercore.http
 
 import com.ledgercore.App
+import com.ledgercore.TestClient
+import com.ledgercore.TestDatabase
 import groovy.json.JsonSlurper
-import spark.Service
 import spock.lang.Shared
 import spock.lang.Specification
-
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 
 class HealthSpec extends Specification {
 
     @Shared
-    Service app
+    App app
 
     @Shared
-    HttpClient client = HttpClient.newHttpClient()
+    TestClient client
 
     def setupSpec() {
-        app = App.start(0)
+        app = App.start(TestDatabase.appConfig())
+        client = new TestClient(app.port())
     }
 
     def cleanupSpec() {
         app.stop()
-        app.awaitStop()
     }
 
     def "health returns 200 and status UP"() {
-        given:
-        def request = HttpRequest.newBuilder(URI.create("http://localhost:${app.port()}/health")).build()
-
         when:
-        def response = client.send(request, HttpResponse.BodyHandlers.ofString())
+        def response = client.get("/health")
 
         then:
         response.statusCode() == 200
