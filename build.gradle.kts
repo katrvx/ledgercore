@@ -2,6 +2,7 @@ plugins {
     java
     groovy
     application
+    jacoco
     id("org.jooq.jooq-codegen-gradle") version "3.21.9"
 }
 
@@ -117,4 +118,35 @@ tasks.register<JavaExec>("fraudEvaluation") {
     mainClass = "com.ledgercore.evaluation.FraudEvaluation"
     // seed 1 was only used to debug the generator, the report uses seed 2
     args("2", layout.projectDirectory.file("docs/fraud-evaluation.md").asFile.path)
+}
+
+// generated jooq classes are not my code, so they don't count for coverage
+val coveredClasses = sourceSets.main.get().output.classesDirs.asFileTree.matching {
+    exclude("com/ledgercore/jooq/**")
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    classDirectories.setFrom(coveredClasses)
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+tasks.jacocoTestCoverageVerification {
+    dependsOn(tasks.test)
+    classDirectories.setFrom(coveredClasses)
+    violationRules {
+        rule {
+            limit {
+                counter = "LINE"
+                minimum = "0.80".toBigDecimal()
+            }
+        }
+    }
+}
+
+tasks.check {
+    dependsOn(tasks.jacocoTestReport, tasks.jacocoTestCoverageVerification)
 }
