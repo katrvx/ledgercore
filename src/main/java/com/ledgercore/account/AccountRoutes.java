@@ -2,6 +2,7 @@ package com.ledgercore.account;
 
 import com.ledgercore.http.Json;
 import com.ledgercore.http.PathId;
+import com.ledgercore.http.RequestBody;
 import spark.Request;
 import spark.Response;
 import spark.Service;
@@ -20,7 +21,7 @@ public class AccountRoutes {
     }
 
     private String create(Request request, Response response) {
-        CreateAccountRequest body = Json.read(request.bodyAsBytes(), CreateAccountRequest.class);
+        CreateAccountRequest body = Json.read(RequestBody.read(request), CreateAccountRequest.class);
         Account account = accounts.create(body);
         response.status(201);
         response.type("application/json");

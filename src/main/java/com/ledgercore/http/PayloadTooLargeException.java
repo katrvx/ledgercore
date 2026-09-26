@@ -1,0 +1,8 @@
+package com.ledgercore.http;
+
+public class PayloadTooLargeException extends RuntimeException {
+
+    public PayloadTooLargeException(String message) {
+        super(message);
+    }
+}

@@ -15,10 +15,11 @@ class TestClient {
     }
 
     HttpResponse<String> get(String path) {
-        def request = HttpRequest.newBuilder(URI.create(baseUrl + path))
-                .timeout(Duration.ofSeconds(30))
-                .build()
-        client.send(request, HttpResponse.BodyHandlers.ofString())
+        get(path, [:])
+    }
+
+    HttpResponse<String> get(String path, Map<String, String> headers) {
+        send("GET", path, null, headers)
     }
 
     // every post gets a fresh idempotency key unless the test passes its own
@@ -27,13 +28,18 @@ class TestClient {
     }
 
     HttpResponse<String> post(String path, String body, String idempotencyKey) {
+        def headers = ["Content-Type": "application/json"]
+        if (idempotencyKey != null) {
+            headers["Idempotency-Key"] = idempotencyKey
+        }
+        send("POST", path, body, headers)
+    }
+
+    HttpResponse<String> send(String method, String path, String body, Map<String, String> headers) {
         def builder = HttpRequest.newBuilder(URI.create(baseUrl + path))
                 .timeout(Duration.ofSeconds(30))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-        if (idempotencyKey != null) {
-            builder.header("Idempotency-Key", idempotencyKey)
-        }
+                .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body))
+        headers.each { name, value -> builder.header(name, value) }
         client.send(builder.build(), HttpResponse.BodyHandlers.ofString())
     }
 }

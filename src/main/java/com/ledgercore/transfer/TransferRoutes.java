@@ -3,6 +3,7 @@ package com.ledgercore.transfer;
 import com.ledgercore.http.Json;
 import com.ledgercore.http.PathId;
 import com.ledgercore.http.Problem;
+import com.ledgercore.http.RequestBody;
 import com.ledgercore.idempotency.IdempotencyService;
 import com.ledgercore.idempotency.StoredResponse;
 import spark.Request;
@@ -27,14 +28,14 @@ public class TransferRoutes {
     }
 
     private String create(Request request, Response response) {
-        CreateTransferRequest body = Json.read(request.bodyAsBytes(), CreateTransferRequest.class);
+        CreateTransferRequest body = Json.read(RequestBody.read(request), CreateTransferRequest.class);
         StoredResponse result = idempotency.run(request, tx -> toResponse(transfers.transfer(tx, body)));
         return reply(response, result);
     }
 
     private String deposit(Request request, Response response) {
         long accountId = PathId.parse(request.params("id"), "account id");
-        DepositRequest body = Json.read(request.bodyAsBytes(), DepositRequest.class);
+        DepositRequest body = Json.read(RequestBody.read(request), DepositRequest.class);
         StoredResponse result = idempotency.run(request, tx -> toResponse(transfers.deposit(tx, accountId, body)));
         return reply(response, result);
     }

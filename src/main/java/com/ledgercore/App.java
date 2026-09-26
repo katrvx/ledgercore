@@ -10,10 +10,13 @@ import com.ledgercore.fraud.FraudEngine;
 import com.ledgercore.fraud.FraudFactsCollector;
 import com.ledgercore.http.ErrorHandlers;
 import com.ledgercore.http.HealthRoutes;
+import com.ledgercore.http.RequestFilters;
 import com.ledgercore.idempotency.IdempotencyCache;
 import com.ledgercore.idempotency.IdempotencyRepository;
 import com.ledgercore.idempotency.IdempotencyService;
 import com.ledgercore.ledger.LedgerRepository;
+import com.ledgercore.ledger.LedgerRoutes;
+import com.ledgercore.ledger.LedgerService;
 import com.ledgercore.transfer.TransferRepository;
 import com.ledgercore.transfer.TransferRoutes;
 import com.ledgercore.transfer.TransferService;
@@ -48,17 +51,21 @@ public class App {
         Redis redis = new Redis(config.redisUrl());
 
         AccountRepository accountRepository = new AccountRepository(db);
+        LedgerRepository ledgerRepository = new LedgerRepository(db);
         AccountService accountService = new AccountService(accountRepository);
+        LedgerService ledgerService = new LedgerService(accountRepository, ledgerRepository);
         TransferService transferService = new TransferService(
-                accountRepository, new TransferRepository(db), new LedgerRepository(),
+                accountRepository, new TransferRepository(db), ledgerRepository,
                 new FraudFactsCollector(redis, config.fraud(), Clock.systemUTC()), FraudEngine.fromConfig(config.fraud()));
         IdempotencyService idempotencyService = new IdempotencyService(
                 db, new IdempotencyCache(redis), new IdempotencyRepository(db));
 
         Service http = Service.ignite().port(config.port());
+        new RequestFilters().register(http);
         new ErrorHandlers().register(http);
         new HealthRoutes(dataSource, redis).register(http);
         new AccountRoutes(accountService).register(http);
+        new LedgerRoutes(ledgerService).register(http);
         new TransferRoutes(transferService, idempotencyService).register(http);
         http.awaitInitialization();
         return new App(http, dataSource, redis);

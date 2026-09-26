@@ -4,6 +4,7 @@ import com.ledgercore.http.ConflictException;
 import com.ledgercore.http.Json;
 import com.ledgercore.http.NotFoundException;
 import com.ledgercore.http.Problem;
+import com.ledgercore.http.RequestBody;
 import com.ledgercore.http.UnprocessableException;
 import com.ledgercore.http.ValidationException;
 import org.jooq.DSLContext;
@@ -110,12 +111,18 @@ public class IdempotencyService {
         if (key.length() > MAX_KEY_LENGTH) {
             throw new ValidationException("Idempotency-Key must be at most " + MAX_KEY_LENGTH + " characters");
         }
+        // the key goes into redis key names and the database, so no spaces or control characters
+        for (char c : key.toCharArray()) {
+            if (c < '!' || c > '~') {
+                throw new ValidationException("Idempotency-Key must contain only visible ASCII characters");
+            }
+        }
         return key;
     }
 
     // method and path are part of the hash, so one key can't be reused on another endpoint
     private String requestHash(Request request) {
-        String canonical = request.requestMethod() + " " + request.pathInfo() + "\n" + Json.canonical(request.bodyAsBytes());
+        String canonical = request.requestMethod() + " " + request.pathInfo() + "\n" + Json.canonical(RequestBody.read(request));
         return sha256(canonical);
     }
 
