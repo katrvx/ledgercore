@@ -8,6 +8,7 @@ public class ErrorHandlers {
     public void register(Service http) {
         http.exception(ValidationException.class, (e, req, res) -> send(res, 400, "Bad Request", e.getMessage()));
         http.exception(NotFoundException.class, (e, req, res) -> send(res, 404, "Not Found", e.getMessage()));
+        http.exception(UnprocessableException.class, (e, req, res) -> send(res, 422, "Unprocessable Content", e.getMessage()));
     }
 
     private void send(Response res, int status, String title, String detail) {

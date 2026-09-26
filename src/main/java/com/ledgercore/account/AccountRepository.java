@@ -32,9 +32,27 @@ public class AccountRepository {
                 .map(this::toAccount);
     }
 
-    public boolean hasFundingAccount(String currency) {
-        return db.fetchExists(ACCOUNTS,
-                ACCOUNTS.TYPE.eq(AccountType.SYSTEM.name()).and(ACCOUNTS.CURRENCY.eq(currency)));
+    public Optional<Account> findFunding(String currency) {
+        return db.selectFrom(ACCOUNTS)
+                .where(ACCOUNTS.TYPE.eq(AccountType.SYSTEM.name()).and(ACCOUNTS.CURRENCY.eq(currency)))
+                .fetchOptional()
+                .map(this::toAccount);
+    }
+
+    // must run inside a transaction, the row stays locked until it ends
+    public Optional<Account> lockForUpdate(DSLContext tx, long id) {
+        return tx.selectFrom(ACCOUNTS)
+                .where(ACCOUNTS.ID.eq(id))
+                .forUpdate()
+                .fetchOptional()
+                .map(this::toAccount);
+    }
+
+    public void updateBalance(DSLContext tx, long id, long balance) {
+        tx.update(ACCOUNTS)
+                .set(ACCOUNTS.BALANCE, balance)
+                .where(ACCOUNTS.ID.eq(id))
+                .execute();
     }
 
     private Account toAccount(AccountsRecord record) {

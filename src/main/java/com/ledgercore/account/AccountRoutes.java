@@ -1,7 +1,7 @@
 package com.ledgercore.account;
 
 import com.ledgercore.http.Json;
-import com.ledgercore.http.ValidationException;
+import com.ledgercore.http.PathId;
 import spark.Request;
 import spark.Response;
 import spark.Service;
@@ -29,21 +29,8 @@ public class AccountRoutes {
     }
 
     private String get(Request request, Response response) {
-        Account account = accounts.get(parseId(request.params("id")));
+        Account account = accounts.get(PathId.parse(request.params("id"), "account id"));
         response.type("application/json");
         return Json.write(account);
-    }
-
-    private long parseId(String value) {
-        long id;
-        try {
-            id = Long.parseLong(value);
-        } catch (NumberFormatException e) {
-            throw new ValidationException("account id must be a positive number");
-        }
-        if (id <= 0) {
-            throw new ValidationException("account id must be a positive number");
-        }
-        return id;
     }
 }

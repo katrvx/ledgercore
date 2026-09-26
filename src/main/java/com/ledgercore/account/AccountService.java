@@ -3,8 +3,6 @@ package com.ledgercore.account;
 import com.ledgercore.http.NotFoundException;
 import com.ledgercore.http.ValidationException;
 
-import java.util.Currency;
-
 public class AccountService {
 
     private static final int MAX_OWNER_NAME_LENGTH = 200;
@@ -50,21 +48,12 @@ public class AccountService {
         if (currency == null) {
             throw new ValidationException("currency is required");
         }
-        if (!isIsoCurrencyCode(currency)) {
+        if (!Currencies.isIsoCode(currency)) {
             throw new ValidationException("currency must be an ISO 4217 code like EUR");
         }
-        if (!accounts.hasFundingAccount(currency)) {
+        if (accounts.findFunding(currency).isEmpty()) {
             throw new ValidationException("currency " + currency + " is not supported");
         }
         return currency;
-    }
-
-    private boolean isIsoCurrencyCode(String code) {
-        try {
-            Currency.getInstance(code);
-            return true;
-        } catch (IllegalArgumentException e) {
-            return false;
-        }
     }
 }
