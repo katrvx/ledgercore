@@ -1,0 +1,180 @@
+openapi: 3.1.0
+info:
+  title: LedgerCore
+  version: 0.1.0
+  description: Accounts and money transfers with double-entry bookkeeping. All amounts are in minor units (for example cents for EUR).
+
+servers:
+  - url: http://localhost:8080
+
+# v1 has no authentication
+security: []
+
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Liveness check, does not touch the database
+      responses:
+        "200":
+          description: The process is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  /ready:
+    get:
+      operationId: ready
+      summary: Readiness check, fails when the database is not reachable
+      responses:
+        "200":
+          description: Ready to take traffic
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "503":
+          description: The database is not reachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  /accounts:
+    post:
+      operationId: createAccount
+      summary: Open a customer account with a zero balance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAccountRequest"
+      responses:
+        "201":
+          description: Account created
+          headers:
+            Location:
+              description: Path of the new account
+              schema:
+                type: string
+                example: /accounts/42
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /accounts/{id}:
+    get:
+      operationId: getAccount
+      summary: Get one account
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  schemas:
+    Status:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [UP, DOWN]
+
+    CreateAccountRequest:
+      type: object
+      additionalProperties: false
+      required: [ownerName, currency]
+      properties:
+        ownerName:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Trimmed before saving. Control characters are not allowed.
+          example: Alice
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          description: ISO 4217 code. Only EUR, GBP and USD are supported.
+          example: EUR
+
+    Account:
+      type: object
+      required: [id, type, ownerName, currency, balance, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 42
+        type:
+          type: string
+          enum: [CUSTOMER, SYSTEM]
+          description: SYSTEM accounts are the funding accounts money enters from. Only they can have a negative balance.
+        ownerName:
+          type: string
+          example: Alice
+        currency:
+          type: string
+          example: EUR
+        balance:
+          type: integer
+          format: int64
+          description: Balance in minor units
+          example: 0
+        createdAt:
+          type: string
+          format: date-time
+          description: Always in UTC
+          example: "2026-09-26T10:20:56.003403Z"
+
+    Problem:
+      type: object
+      description: Error body from RFC 7807
+      required: [type, title, status, detail]
+      properties:
+        type:
+          type: string
+          example: about:blank
+        title:
+          type: string
+          example: Bad Request
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: currency JPY is not supported
+
+  responses:
+    BadRequest:
+      description: The request is not valid
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: The resource does not exist
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
