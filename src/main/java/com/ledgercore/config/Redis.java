@@ -8,17 +8,23 @@ import io.lettuce.core.SocketOptions;
 import io.lettuce.core.TimeoutOptions;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 public class Redis implements AutoCloseable {
 
+    private static final Logger log = LoggerFactory.getLogger(Redis.class);
     private static final Duration RETRY_CONNECT_AFTER = Duration.ofSeconds(5);
 
     private final RedisClient client;
     private StatefulRedisConnection<String, String> connection;
     private Instant nextConnectAttempt = Instant.MIN;
+    private final AtomicBoolean up = new AtomicBoolean(true);
 
     public Redis(String url) {
         client = RedisClient.create(url);
@@ -30,9 +36,26 @@ public class Redis implements AutoCloseable {
                 .build());
     }
 
+    // every command goes through here, so an outage is logged once when it starts and once when it ends
+    public <T> T call(Function<RedisCommands<String, String>, T> command) {
+        T result;
+        try {
+            result = command.apply(commands());
+        } catch (RedisException e) {
+            if (up.getAndSet(false)) {
+                log.warn("redis is down, using the database instead: {}", e.getMessage());
+            }
+            throw e;
+        }
+        if (!up.getAndSet(true)) {
+            log.info("redis is back");
+        }
+        return result;
+    }
+
     // connects on first use, so the app also starts when redis is down
     // once connected, lettuce reconnects by itself after an outage
-    public synchronized RedisCommands<String, String> commands() {
+    private synchronized RedisCommands<String, String> commands() {
         if (connection == null) {
             connect();
         }

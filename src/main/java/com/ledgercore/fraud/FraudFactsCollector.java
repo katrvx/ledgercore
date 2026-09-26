@@ -7,8 +7,6 @@ import io.lettuce.core.Range;
 import io.lettuce.core.RedisException;
 import io.lettuce.core.api.sync.RedisCommands;
 import org.jooq.DSLContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
@@ -20,8 +18,6 @@ import static com.ledgercore.jooq.Tables.TRANSFERS;
 
 // all reads go through the open transfer transaction, so a request never takes a second pool connection
 public class FraudFactsCollector {
-
-    private static final Logger log = LoggerFactory.getLogger(FraudFactsCollector.class);
 
     private final Redis redis;
     private final FraudConfig config;
@@ -48,14 +44,16 @@ public class FraudFactsCollector {
         try {
             return countInRedis(accountId);
         } catch (RedisException e) {
-            log.warn("redis unavailable, counting velocity in the database: {}", e.getMessage());
             return countInDatabase(tx, accountId) + 1;
         }
     }
 
     // a sorted set per account, scored by time, with one unique member per attempt
     private int countInRedis(long accountId) {
-        RedisCommands<String, String> commands = redis.commands();
+        return redis.call(commands -> countInRedis(commands, accountId));
+    }
+
+    private int countInRedis(RedisCommands<String, String> commands, long accountId) {
         String key = "fraud:velocity:" + accountId;
         long now = clock.millis();
         long windowMillis = config.velocityWindow().toMillis();

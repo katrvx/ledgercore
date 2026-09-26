@@ -55,9 +55,8 @@ public class HealthRoutes {
 
     private boolean redisIsUp() {
         try {
-            return "PONG".equals(redis.commands().ping());
+            return "PONG".equals(redis.call(commands -> commands.ping()));
         } catch (RedisException e) {
-            log.warn("redis is not reachable: {}", e.getMessage());
             return false;
         }
     }
