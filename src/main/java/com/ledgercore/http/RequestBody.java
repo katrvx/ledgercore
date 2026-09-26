@@ -6,6 +6,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletRequestWrapper;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 
 public class RequestBody {
 
@@ -49,10 +50,25 @@ public class RequestBody {
             } else {
                 in = raw.getInputStream();
             }
-            return in.readNBytes(limit);
+            return readUpTo(in, limit);
         } catch (IOException e) {
             throw new ValidationException("request body could not be read");
         }
+    }
+
+    // not InputStream.readNBytes: when it already has enough bytes it still asks for 0 more,
+    // and jetty blocks on that until the client sends something or goes away
+    private static byte[] readUpTo(InputStream in, int limit) throws IOException {
+        byte[] buffer = new byte[limit];
+        int total = 0;
+        while (total < limit) {
+            int read = in.read(buffer, total, limit - total);
+            if (read == -1) {
+                break;
+            }
+            total += read;
+        }
+        return Arrays.copyOf(buffer, total);
     }
 
     private static PayloadTooLargeException tooLarge() {

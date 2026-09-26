@@ -81,16 +81,16 @@ class RequestValidationSpec extends Specification {
     }
 
     def "a large Content-Length is rejected without waiting for the whole body"() {
-        when: "10 MB are promised but only the first 1 KB is sent"
-        def status = rawRequest("Content-Length: 10485760\r\n", [], 1024)
+        when: "10 MB are promised but only 1 byte is sent"
+        def status = rawRequest("Content-Length: 10485760\r\n", "x")
 
         then:
         status == "HTTP/1.1 413 Payload Too Large"
     }
 
     def "a chunked body without Content-Length stops being read after 16 KB"() {
-        when: "20 KB of chunks and no final chunk, so a server that read everything would wait forever"
-        def status = rawRequest("Transfer-Encoding: chunked\r\n", [1024] * 20)
+        when: "the chunk promises 32 KB, so a server that read everything would wait forever"
+        def status = rawRequest("Transfer-Encoding: chunked\r\n", unfinishedChunk())
 
         then:
         status == "HTTP/1.1 413 Payload Too Large"
@@ -98,7 +98,7 @@ class RequestValidationSpec extends Specification {
 
     def "a chunked body with Transfer-Encoding #value can't bypass the limit either"() {
         when: "jetty still reads these as chunked, but spark only treats the exact word chunked as streaming"
-        def status = rawRequest("Transfer-Encoding: " + value + "\r\n", [1024] * 20)
+        def status = rawRequest("Transfer-Encoding: " + value + "\r\n", unfinishedChunk())
 
         then:
         status == "HTTP/1.1 413 Payload Too Large"
@@ -126,26 +126,25 @@ class RequestValidationSpec extends Specification {
         json.substring(0, json.length() - 1) + " " * (size - json.length()) + "}"
     }
 
-    // raw socket, so the test controls exactly what is sent and can leave a body unfinished
-    // jetty only hands a request to the app once the first body bytes arrive, so tests always send some
-    private String rawRequest(String lengthHeader, List<Integer> chunkSizes, int plainBytes = 0) {
+    // raw socket, so the test controls exactly what is sent and can leave a body unfinished.
+    // it writes once and never after the server may have answered, so a fast close can't break the test
+    private String rawRequest(String headers, String body) {
         def socket = new Socket("localhost", app.port())
         socket.soTimeout = 10_000
         try {
-            def out = socket.outputStream
-            out.write(("POST /accounts HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n"
-                    + lengthHeader + "\r\n").getBytes(StandardCharsets.US_ASCII))
-            out.write(("x" * plainBytes).getBytes(StandardCharsets.US_ASCII))
-            chunkSizes.each { size ->
-                out.write((Integer.toHexString(size) + "\r\n").getBytes(StandardCharsets.US_ASCII))
-                out.write(("x" * size).getBytes(StandardCharsets.US_ASCII))
-                out.write("\r\n".getBytes(StandardCharsets.US_ASCII))
-            }
-            out.flush()
+            def request = "POST /accounts HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n" + headers + "\r\n" + body
+            socket.outputStream.write(request.getBytes(StandardCharsets.US_ASCII))
+            socket.outputStream.flush()
             def reader = new BufferedReader(new InputStreamReader(socket.inputStream, StandardCharsets.US_ASCII))
             return reader.readLine()
         } finally {
             socket.close()
         }
+    }
+
+    // one chunk that promises 32 KB, of which only the limit plus one byte is sent:
+    // the server needs every byte to reach its limit, so it has nothing unread when it closes
+    private static String unfinishedChunk() {
+        "8000\r\n" + "x" * (MAX_BODY + 1)
     }
 }
