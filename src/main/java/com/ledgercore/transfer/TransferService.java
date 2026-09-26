@@ -4,6 +4,9 @@ import com.ledgercore.account.Account;
 import com.ledgercore.account.AccountRepository;
 import com.ledgercore.account.AccountType;
 import com.ledgercore.account.Currencies;
+import com.ledgercore.fraud.FraudEngine;
+import com.ledgercore.fraud.FraudFactsCollector;
+import com.ledgercore.fraud.RuleResult;
 import com.ledgercore.http.NotFoundException;
 import com.ledgercore.http.UnprocessableException;
 import com.ledgercore.http.ValidationException;
@@ -16,38 +19,52 @@ public class TransferService {
     private final AccountRepository accounts;
     private final TransferRepository transfers;
     private final LedgerRepository ledger;
+    private final FraudFactsCollector fraudFacts;
+    private final FraudEngine fraudEngine;
 
-    public TransferService(AccountRepository accounts, TransferRepository transfers, LedgerRepository ledger) {
+    public TransferService(AccountRepository accounts, TransferRepository transfers, LedgerRepository ledger,
+                           FraudFactsCollector fraudFacts, FraudEngine fraudEngine) {
         this.accounts = accounts;
         this.transfers = transfers;
         this.ledger = ledger;
+        this.fraudFacts = fraudFacts;
+        this.fraudEngine = fraudEngine;
     }
 
-    // moves money between two customer accounts
+    // moves money between two customer accounts, unless the fraud rules stop it
     public Transfer transfer(DSLContext tx, CreateTransferRequest request) {
         validate(request);
         long fromId = request.fromAccountId();
         long toId = request.toAccountId();
+        long amount = request.amount();
         if (fromId == toId) {
             throw new UnprocessableException("fromAccountId and toAccountId must be different");
         }
-        LockedAccounts locked = lockInIdOrder(tx, fromId, toId);
-        requireCustomer(locked.from());
-        requireCustomer(locked.to());
-        requireCurrency(locked.from(), locked.to(), request.currency());
-        return move(tx, locked.from(), locked.to(), request.amount());
+        // type and currency never change, so a plain read is enough to check them
+        Account from = find(tx, fromId);
+        Account to = find(tx, toId);
+        requireCustomer(from);
+        requireCustomer(to);
+        requireCurrency(from, to, request.currency());
+
+        // fraud queries run before locking, so they don't make the lock last longer
+        RuleResult risk = fraudEngine.evaluate(fraudFacts.collect(tx, fromId, toId, amount));
+        return switch (risk.decision()) {
+            case APPROVE -> lockAndMove(tx, fromId, toId, amount);
+            case REVIEW -> transfers.insert(tx, fromId, toId, amount, from.currency(), TransferStatus.PENDING_REVIEW, risk.reason());
+            case DECLINE -> transfers.insert(tx, fromId, toId, amount, from.currency(), TransferStatus.DECLINED, risk.reason());
+        };
     }
 
-    // a deposit is a transfer from the funding account of the same currency
+    // a deposit is a transfer from the funding account of the same currency, money from outside is not checked for fraud
     public Transfer deposit(DSLContext tx, long accountId, DepositRequest request) {
         validate(request);
-        Account account = accounts.findById(accountId)
+        Account account = accounts.findById(tx, accountId)
                 .orElseThrow(() -> new NotFoundException("account " + accountId + " not found"));
         requireCustomer(account);
-        Account funding = accounts.findFunding(account.currency())
+        Account funding = accounts.findFunding(tx, account.currency())
                 .orElseThrow(() -> new IllegalStateException("no funding account for " + account.currency()));
-        LockedAccounts locked = lockInIdOrder(tx, funding.id(), account.id());
-        return move(tx, locked.from(), locked.to(), request.amount());
+        return lockAndMove(tx, funding.id(), account.id(), request.amount());
     }
 
     public Transfer get(long id) {
@@ -55,17 +72,19 @@ public class TransferService {
                 .orElseThrow(() -> new NotFoundException("transfer " + id + " not found"));
     }
 
-    private record LockedAccounts(Account from, Account to) {
+    private Account find(DSLContext tx, long id) {
+        return accounts.findById(tx, id)
+                .orElseThrow(() -> new UnprocessableException("account " + id + " not found"));
     }
 
     // lock in id order so two opposite transfers can't deadlock
-    private LockedAccounts lockInIdOrder(DSLContext tx, long fromId, long toId) {
+    private Transfer lockAndMove(DSLContext tx, long fromId, long toId, long amount) {
         Account first = lock(tx, Math.min(fromId, toId));
         Account second = lock(tx, Math.max(fromId, toId));
         if (first.id() == fromId) {
-            return new LockedAccounts(first, second);
+            return move(tx, first, second, amount);
         }
-        return new LockedAccounts(second, first);
+        return move(tx, second, first, amount);
     }
 
     private Account lock(DSLContext tx, long id) {
@@ -88,7 +107,7 @@ public class TransferService {
         }
         accounts.updateBalance(tx, from.id(), fromBalance);
         accounts.updateBalance(tx, to.id(), toBalance);
-        Transfer transfer = transfers.insert(tx, from.id(), to.id(), amount, from.currency(), TransferStatus.COMPLETED);
+        Transfer transfer = transfers.insert(tx, from.id(), to.id(), amount, from.currency(), TransferStatus.COMPLETED, null);
         ledger.insertPair(tx, transfer.id(), from.id(), to.id(), amount, from.currency());
         return transfer;
     }

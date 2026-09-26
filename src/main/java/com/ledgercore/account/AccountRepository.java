@@ -26,14 +26,23 @@ public class AccountRepository {
     }
 
     public Optional<Account> findById(long id) {
-        return db.selectFrom(ACCOUNTS)
+        return findById(db, id);
+    }
+
+    // inside a transaction pass the transaction, otherwise the read takes a second pool connection
+    public Optional<Account> findById(DSLContext ctx, long id) {
+        return ctx.selectFrom(ACCOUNTS)
                 .where(ACCOUNTS.ID.eq(id))
                 .fetchOptional()
                 .map(this::toAccount);
     }
 
     public Optional<Account> findFunding(String currency) {
-        return db.selectFrom(ACCOUNTS)
+        return findFunding(db, currency);
+    }
+
+    public Optional<Account> findFunding(DSLContext ctx, String currency) {
+        return ctx.selectFrom(ACCOUNTS)
                 .where(ACCOUNTS.TYPE.eq(AccountType.SYSTEM.name()).and(ACCOUNTS.CURRENCY.eq(currency)))
                 .fetchOptional()
                 .map(this::toAccount);

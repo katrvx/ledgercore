@@ -6,6 +6,8 @@ import com.ledgercore.account.AccountService;
 import com.ledgercore.config.AppConfig;
 import com.ledgercore.config.Database;
 import com.ledgercore.config.Redis;
+import com.ledgercore.fraud.FraudEngine;
+import com.ledgercore.fraud.FraudFactsCollector;
 import com.ledgercore.http.ErrorHandlers;
 import com.ledgercore.http.HealthRoutes;
 import com.ledgercore.idempotency.IdempotencyCache;
@@ -20,6 +22,8 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import spark.Service;
+
+import java.time.Clock;
 
 public class App {
 
@@ -46,7 +50,8 @@ public class App {
         AccountRepository accountRepository = new AccountRepository(db);
         AccountService accountService = new AccountService(accountRepository);
         TransferService transferService = new TransferService(
-                accountRepository, new TransferRepository(db), new LedgerRepository());
+                accountRepository, new TransferRepository(db), new LedgerRepository(),
+                new FraudFactsCollector(redis, config.fraud(), Clock.systemUTC()), FraudEngine.fromConfig(config.fraud()));
         IdempotencyService idempotencyService = new IdempotencyService(
                 db, new IdempotencyCache(redis), new IdempotencyRepository(db));
 

@@ -63,7 +63,7 @@ public class IdempotencyCache {
 
     public void save(String key, IdempotencyRecord record) {
         try {
-            redis.commands().setex(responseKey(key), RESPONSE_TTL.toSeconds(), Json.write(record));
+            redis.commands().set(responseKey(key), Json.write(record), SetArgs.Builder.ex(RESPONSE_TTL));
         } catch (RedisException e) {
             warn(e);
         }

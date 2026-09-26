@@ -21,6 +21,13 @@ repositories {
 val jooqVersion = "3.21.9"
 val flywayVersion = "13.8.0"
 
+// the fraud evaluation lives in its own source set, so it never ships inside the app
+val evaluation: SourceSet = sourceSets.create("evaluation") {
+    compileClasspath += sourceSets.main.get().output
+    runtimeClasspath += sourceSets.main.get().output
+}
+configurations[evaluation.implementationConfigurationName].extendsFrom(configurations.implementation.get())
+
 dependencies {
     implementation("com.sparkjava:spark-core:2.9.4")
     implementation("ch.qos.logback:logback-classic:1.5.38")
@@ -39,6 +46,7 @@ dependencies {
     testImplementation("org.apache.groovy:groovy-sql")
     testImplementation("org.spockframework:spock-core:2.4-groovy-4.0")
     testImplementation("org.testcontainers:testcontainers-postgresql:2.0.5")
+    testImplementation(evaluation.output)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -93,6 +101,20 @@ application {
     mainClass = "com.ledgercore.App"
 }
 
+// show deprecated calls in the build output instead of a one-line note
+tasks.withType<JavaCompile>().configureEach {
+    options.compilerArgs.add("-Xlint:deprecation")
+}
+
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.register<JavaExec>("fraudEvaluation") {
+    description = "Runs the fraud rules on 10,000 synthetic labeled transactions and writes docs/fraud-evaluation.md"
+    group = "verification"
+    classpath = evaluation.runtimeClasspath
+    mainClass = "com.ledgercore.evaluation.FraudEvaluation"
+    // seed 1 was only used to debug the generator, the report uses seed 2
+    args("2", layout.projectDirectory.file("docs/fraud-evaluation.md").asFile.path)
 }

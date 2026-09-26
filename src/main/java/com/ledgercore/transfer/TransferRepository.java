@@ -16,13 +16,14 @@ public class TransferRepository {
     }
 
     public Transfer insert(DSLContext tx, long fromAccountId, long toAccountId, long amount, String currency,
-                           TransferStatus status) {
+                           TransferStatus status, String fraudReason) {
         TransfersRecord record = tx.insertInto(TRANSFERS)
                 .set(TRANSFERS.FROM_ACCOUNT_ID, fromAccountId)
                 .set(TRANSFERS.TO_ACCOUNT_ID, toAccountId)
                 .set(TRANSFERS.AMOUNT, amount)
                 .set(TRANSFERS.CURRENCY, currency)
                 .set(TRANSFERS.STATUS, status.name())
+                .set(TRANSFERS.FRAUD_REASON, fraudReason)
                 .returning()
                 .fetchOne();
         return toTransfer(record);

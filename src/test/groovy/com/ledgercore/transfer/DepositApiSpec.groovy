@@ -128,6 +128,23 @@ class DepositApiSpec extends Specification {
         "body sets currency" | '{"amount":1,"currency":"EUR"}' || "unknown field: currency"
     }
 
+    def "30 parallel deposits all complete, so a request never needs a second pool connection"() {
+        given:
+        def pool = java.util.concurrent.Executors.newFixedThreadPool(30)
+
+        when:
+        def statuses = (1..30).collect {
+            pool.submit({ client.post("/accounts/$alice/deposits", '{"amount":10}').statusCode() } as java.util.concurrent.Callable)
+        }*.get()
+
+        then:
+        statuses.every { it == 201 }
+        balance(alice) == 300
+
+        cleanup:
+        pool.shutdown()
+    }
+
     def "deposit fails with 422 when the balance would overflow"() {
         given:
         sql.executeUpdate("update accounts set balance = ? where id = ?", [Long.MAX_VALUE - 10, alice])

@@ -37,7 +37,7 @@ class ConcurrentTransfersSpec extends Specification {
     JsonSlurper json = new JsonSlurper()
 
     def setupSpec() {
-        app = App.start(TestEnv.appConfig())
+        app = App.start(TestEnv.appConfig(TestEnv.NO_FRAUD_LIMITS))
         client = new TestClient(app.port())
         dataSource = Database.connect(TestEnv.appConfig())
         sql = new Sql(dataSource)

@@ -155,6 +155,36 @@ class SchemaSpec extends Specification {
         e.message.contains("ledger_entries_amount_not_zero")
     }
 
+    def "database accepts the transfer status #status"() {
+        given:
+        def from = insertCustomerAccount("EUR")
+        def to = insertCustomerAccount("EUR")
+
+        when:
+        sql.execute("""insert into transfers (from_account_id, to_account_id, amount, currency, status)
+                values (?, ?, 100, 'EUR', ?)""", [from, to, status])
+
+        then:
+        noExceptionThrown()
+
+        where:
+        status << ["COMPLETED", "PENDING_REVIEW", "DECLINED"]
+    }
+
+    def "database rejects an unknown transfer status"() {
+        given:
+        def from = insertCustomerAccount("EUR")
+        def to = insertCustomerAccount("EUR")
+
+        when:
+        sql.execute("""insert into transfers (from_account_id, to_account_id, amount, currency, status)
+                values (?, ?, 100, 'EUR', 'APPROVED')""", [from, to])
+
+        then:
+        def e = thrown(SQLException)
+        e.message.contains("transfers_status_known")
+    }
+
     def "database rejects a second row with the same idempotency key"() {
         given:
         sql.execute("insert into idempotency_keys (key, request_hash, status, response_body) values ('dup', 'h', 201, '{}')")

@@ -2,6 +2,7 @@ package com.ledgercore.transfer;
 
 import com.ledgercore.http.Json;
 import com.ledgercore.http.PathId;
+import com.ledgercore.http.Problem;
 import com.ledgercore.idempotency.IdempotencyService;
 import com.ledgercore.idempotency.StoredResponse;
 import spark.Request;
@@ -27,14 +28,14 @@ public class TransferRoutes {
 
     private String create(Request request, Response response) {
         CreateTransferRequest body = Json.read(request.bodyAsBytes(), CreateTransferRequest.class);
-        StoredResponse result = idempotency.run(request, tx -> created(transfers.transfer(tx, body)));
+        StoredResponse result = idempotency.run(request, tx -> toResponse(transfers.transfer(tx, body)));
         return reply(response, result);
     }
 
     private String deposit(Request request, Response response) {
         long accountId = PathId.parse(request.params("id"), "account id");
         DepositRequest body = Json.read(request.bodyAsBytes(), DepositRequest.class);
-        StoredResponse result = idempotency.run(request, tx -> created(transfers.deposit(tx, accountId, body)));
+        StoredResponse result = idempotency.run(request, tx -> toResponse(transfers.deposit(tx, accountId, body)));
         return reply(response, result);
     }
 
@@ -44,8 +45,15 @@ public class TransferRoutes {
         return Json.write(transfer);
     }
 
-    private StoredResponse created(Transfer transfer) {
-        return new StoredResponse(201, "/transfers/" + transfer.id(), Json.write(transfer));
+    private StoredResponse toResponse(Transfer transfer) {
+        String location = "/transfers/" + transfer.id();
+        return switch (transfer.status()) {
+            case COMPLETED -> new StoredResponse(201, location, Json.write(transfer));
+            // accepted but not done: no money moves until someone reviews it
+            case PENDING_REVIEW -> new StoredResponse(202, location, Json.write(transfer));
+            // the declined row stays in the database for audit, the client only learns that it was declined
+            case DECLINED -> new StoredResponse(422, null, Json.write(Problem.of(422, "transfer was declined by risk checks")));
+        };
     }
 
     // a replayed response looks exactly like the first one, including the Location header
