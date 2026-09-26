@@ -1,0 +1,16 @@
+# build
+.gradle/
+build/
+out/
+
+# ide
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# local env
+.env
+
+# personal notes
+.notes/
