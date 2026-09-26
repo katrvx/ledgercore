@@ -90,7 +90,7 @@ paths:
     post:
       operationId: deposit
       summary: Add money to a customer account
-      description: A deposit is a transfer from the system funding account of the account's currency, so it gets the same locking, ledger entries and idempotency as any transfer.
+      description: A deposit is a transfer from the system funding account of the account's currency, so it gets the same locking, ledger entries and idempotency as any transfer. Deposits are money from outside and are not checked by the fraud rules.
       parameters:
         - $ref: "#/components/parameters/AccountId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -127,8 +127,11 @@ paths:
       operationId: createTransfer
       summary: Move money between two customer accounts of the same currency
       description: |
-        Retries with the same Idempotency-Key get the saved response of the first request, including a saved 404 or 422.
-        A 400 is not saved, so the key can be reused with a fixed body.
+        Every transfer is checked by fraud rules before any money moves. The result is 201 (completed),
+        202 (saved as PENDING_REVIEW, no money moved) or 422 (declined and kept for audit). The response never
+        says which rule fired.
+        Retries with the same Idempotency-Key get the saved response of the first request, including a saved 202, 404 or 422.
+        The rules are not run again for a retry. A 400 is not saved, so the key can be reused with a fixed body.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -150,12 +153,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Transfer"
+        "202":
+          description: Flagged by the fraud rules and saved as PENDING_REVIEW. No money moved.
+          headers:
+            Location:
+              description: Path of the saved transfer
+              schema:
+                type: string
+                example: /transfers/8
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transfer"
         "400":
           $ref: "#/components/responses/BadRequest"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/Unprocessable"
+          description: |
+            The request breaks a business rule, for example insufficient funds, different currencies or an
+            Idempotency-Key reused with a different request. It is also returned with the detail
+            "transfer was declined by risk checks" when the fraud rules decline the transfer.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 
   /transfers/{id}:
     get:
@@ -340,7 +362,8 @@ components:
           example: EUR
         status:
           type: string
-          enum: [COMPLETED]
+          enum: [COMPLETED, PENDING_REVIEW, DECLINED]
+          description: PENDING_REVIEW and DECLINED transfers moved no money and have no ledger entries.
         createdAt:
           type: string
           format: date-time
