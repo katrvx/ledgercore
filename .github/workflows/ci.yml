@@ -16,3 +16,14 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew check
+
+      # the html report for reading, the xml results because they keep each test's output and server logs
+      - name: upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/
+            build/test-results/test/
+          retention-days: 14
