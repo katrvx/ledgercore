@@ -26,20 +26,21 @@ paths:
   /ready:
     get:
       operationId: ready
-      summary: Readiness check, fails when the database is not reachable
+      summary: Readiness check, fails only when the database is not reachable
+      description: Without Redis the service still works, only the idempotency fast path is gone, so a Redis outage is reported but does not fail readiness.
       responses:
         "200":
           description: Ready to take traffic
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Status"
+                $ref: "#/components/schemas/Readiness"
         "503":
           description: The database is not reachable
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Status"
+                $ref: "#/components/schemas/Readiness"
 
   /accounts:
     post:
@@ -89,9 +90,10 @@ paths:
     post:
       operationId: deposit
       summary: Add money to a customer account
-      description: A deposit is a transfer from the system funding account of the account's currency, so it gets the same locking and ledger entries as any transfer.
+      description: A deposit is a transfer from the system funding account of the account's currency, so it gets the same locking, ledger entries and idempotency as any transfer.
       parameters:
         - $ref: "#/components/parameters/AccountId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -100,7 +102,7 @@ paths:
               $ref: "#/components/schemas/DepositRequest"
       responses:
         "201":
-          description: Deposit completed
+          description: Deposit completed, or the saved response of the first request with this key
           headers:
             Location:
               description: Path of the transfer that moved the money
@@ -115,6 +117,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/Unprocessable"
 
@@ -122,6 +126,11 @@ paths:
     post:
       operationId: createTransfer
       summary: Move money between two customer accounts of the same currency
+      description: |
+        Retries with the same Idempotency-Key get the saved response of the first request, including a saved 404 or 422.
+        A 400 is not saved, so the key can be reused with a fixed body.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -130,7 +139,7 @@ paths:
               $ref: "#/components/schemas/CreateTransferRequest"
       responses:
         "201":
-          description: Transfer completed
+          description: Transfer completed, or the saved response of the first request with this key
           headers:
             Location:
               description: Path of the new transfer
@@ -143,6 +152,8 @@ paths:
                 $ref: "#/components/schemas/Transfer"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/Unprocessable"
 
@@ -181,12 +192,41 @@ components:
         format: int64
         minimum: 1
 
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Unique per request, for example a UUID. The same key with the same method, path and JSON body
+        (field order and whitespace do not matter) replays the first response. The same key with a
+        different request is rejected with 422. A key is kept for 24 hours in Redis and permanently in the database.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        example: 6f1c2a3e-8b4d-4c5e-9f0a-1b2c3d4e5f60
+
   schemas:
     Status:
       type: object
       required: [status]
       properties:
         status:
+          type: string
+          enum: [UP]
+
+    Readiness:
+      type: object
+      required: [status, database, redis]
+      properties:
+        status:
+          type: string
+          enum: [UP, DOWN]
+          description: DOWN only when the database is not reachable
+        database:
+          type: string
+          enum: [UP, DOWN]
+        redis:
           type: string
           enum: [UP, DOWN]
 
@@ -327,7 +367,7 @@ components:
 
   responses:
     BadRequest:
-      description: The request is not valid
+      description: The request is not valid, for example a missing field or a missing Idempotency-Key header
       content:
         application/problem+json:
           schema:
@@ -338,8 +378,14 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: A request with the same Idempotency-Key is still being handled, retry in a moment
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
     Unprocessable:
-      description: The request is well formed but breaks a business rule, for example insufficient funds or different currencies
+      description: The request is well formed but breaks a business rule, for example insufficient funds, different currencies, or an Idempotency-Key reused with a different request
       content:
         application/problem+json:
           schema:
