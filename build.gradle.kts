@@ -40,6 +40,8 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql:$flywayVersion")
     implementation("org.jooq:jooq:$jooqVersion")
     implementation("io.lettuce:lettuce-core:7.8.0.RELEASE")
+    // lets the jdbc url point at a cloud sql instance by name, with tls and iam, no open database port
+    runtimeOnly("com.google.cloud.sql:postgres-socket-factory:1.30.0")
 
     jooqCodegen("org.jooq:jooq-meta-extensions:$jooqVersion")
 

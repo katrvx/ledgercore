@@ -14,3 +14,6 @@ out/
 
 # personal notes
 .notes/
+
+# written by the deploy steps in docs/deploy.md, holds the project id
+cloud-run-env.yaml
