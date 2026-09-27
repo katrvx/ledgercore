@@ -1,0 +1,7 @@
+# an allowlist: the build only needs the gradle files and the main sources
+*
+!gradlew
+!gradle/
+!settings.gradle.kts
+!build.gradle.kts
+!src/main/

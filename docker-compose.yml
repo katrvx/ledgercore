@@ -25,5 +25,24 @@ services:
       timeout: 3s
       retries: 10
 
+  app:
+    build: .
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ledgercore}
+      DATABASE_USER: ${POSTGRES_USER:-ledgercore}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-ledgercore}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # same as in kubernetes: nothing on the image can be changed, only /tmp is writable
+    read_only: true
+    tmpfs:
+      - /tmp
+
 volumes:
   postgres-data:

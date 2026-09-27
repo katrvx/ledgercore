@@ -88,7 +88,8 @@ echo "== environment" | tee "$OUT/$NAME-environment.txt"
 
 echo "== starting postgres and redis"
 "${COMPOSE[@]}" down -v > /dev/null 2>&1 || true
-"${COMPOSE[@]}" up -d --wait > /dev/null 2>&1
+# only the databases: the app runs outside docker, pinned to APP_JAVA_HOME
+"${COMPOSE[@]}" up -d --wait postgres redis > /dev/null 2>&1
 echo "postgres: $("${COMPOSE[@]}" exec -T postgres psql -U ledgercore -d ledgercore -At -c 'show server_version')" \
   | tee -a "$OUT/$NAME-environment.txt"
 echo "redis: $("${COMPOSE[@]}" exec -T redis redis-server --version | cut -d' ' -f3)" | tee -a "$OUT/$NAME-environment.txt"
