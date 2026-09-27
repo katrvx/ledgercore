@@ -24,11 +24,15 @@ import com.zaxxer.hikari.HikariDataSource;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import spark.Service;
 
 import java.time.Clock;
 
 public class App {
+
+    private static final Logger log = LoggerFactory.getLogger(App.class);
 
     private final Service http;
     private final HikariDataSource dataSource;
@@ -41,7 +45,9 @@ public class App {
     }
 
     public static void main(String[] args) {
-        start(AppConfig.fromEnv());
+        App app = start(AppConfig.fromEnv());
+        // cloud run and kubernetes send SIGTERM and wait a few seconds before they kill the container
+        Runtime.getRuntime().addShutdownHook(new Thread(app::stop, "shutdown"));
     }
 
     // wires all dependencies by hand and starts the http server
@@ -76,9 +82,11 @@ public class App {
     }
 
     public void stop() {
+        log.info("shutting down");
         http.stop();
         http.awaitStop();
         redis.close();
         dataSource.close();
+        log.info("stopped");
     }
 }
