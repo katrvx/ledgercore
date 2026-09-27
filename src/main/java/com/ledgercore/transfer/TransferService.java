@@ -31,15 +31,20 @@ public class TransferService {
         this.fraudEngine = fraudEngine;
     }
 
-    // moves money between two customer accounts, unless the fraud rules stop it
-    public Transfer transfer(DSLContext tx, CreateTransferRequest request) {
+    // step one, before any transaction: checks the request and counts this attempt for the velocity rule
+    public int recordAttempt(CreateTransferRequest request) {
         validate(request);
+        if (request.fromAccountId().equals(request.toAccountId())) {
+            throw new UnprocessableException("fromAccountId and toAccountId must be different");
+        }
+        return fraudFacts.recordAttempt(request.fromAccountId());
+    }
+
+    // step two, in the transaction: moves money between two customer accounts, unless the fraud rules stop it
+    public Transfer transfer(DSLContext tx, CreateTransferRequest request, int attemptsInWindow) {
         long fromId = request.fromAccountId();
         long toId = request.toAccountId();
         long amount = request.amount();
-        if (fromId == toId) {
-            throw new UnprocessableException("fromAccountId and toAccountId must be different");
-        }
         // type and currency never change, so a plain read is enough to check them
         Account from = find(tx, fromId);
         Account to = find(tx, toId);
@@ -48,7 +53,7 @@ public class TransferService {
         requireCurrency(from, to, request.currency());
 
         // fraud queries run before locking, so they don't make the lock last longer
-        RuleResult risk = fraudEngine.evaluate(fraudFacts.collect(tx, fromId, toId, amount));
+        RuleResult risk = fraudEngine.evaluate(fraudFacts.collect(tx, fromId, toId, amount, attemptsInWindow));
         return switch (risk.decision()) {
             case APPROVE -> lockAndMove(tx, fromId, toId, amount);
             case REVIEW -> transfers.insert(tx, fromId, toId, amount, from.currency(), TransferStatus.PENDING_REVIEW, risk.reason());

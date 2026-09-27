@@ -16,36 +16,34 @@ import java.util.UUID;
 
 import static com.ledgercore.jooq.Tables.TRANSFERS;
 
-// all reads go through the open transfer transaction, so a request never takes a second pool connection
+// redis is called before the transfer transaction opens, the database reads go through that transaction
 public class FraudFactsCollector {
 
+    private final DSLContext db;
     private final Redis redis;
     private final FraudConfig config;
     private final Clock clock;
 
-    public FraudFactsCollector(Redis redis, FraudConfig config, Clock clock) {
+    public FraudFactsCollector(DSLContext db, Redis redis, FraudConfig config, Clock clock) {
+        this.db = db;
         this.redis = redis;
         this.config = config;
         this.clock = clock;
     }
 
-    public FraudFacts collect(DSLContext tx, long fromId, long toId, long amount) {
-        List<Long> history = recentCompletedAmounts(tx, fromId);
-        return new FraudFacts(
-                amount,
-                attemptsInWindow(tx, fromId),
-                history.size(),
-                average(history),
-                hasSentTo(tx, fromId, toId));
-    }
-
-    // counts this attempt too, and falls back to the database when redis is down
-    private int attemptsInWindow(DSLContext tx, long accountId) {
+    // counts this attempt in the sliding window, with no transaction open:
+    // a slow redis call inside a transaction held a pool connection and made other requests queue
+    public int recordAttempt(long accountId) {
         try {
             return countInRedis(accountId);
         } catch (RedisException e) {
-            return countInDatabase(tx, accountId) + 1;
+            return countInDatabase(accountId) + 1;
         }
+    }
+
+    public FraudFacts collect(DSLContext tx, long fromId, long toId, long amount, int attemptsInWindow) {
+        List<Long> history = recentCompletedAmounts(tx, fromId);
+        return new FraudFacts(amount, attemptsInWindow, history.size(), average(history), hasSentTo(tx, fromId, toId));
     }
 
     // a sorted set per account, scored by time, with one unique member per attempt
@@ -66,9 +64,9 @@ public class FraudFactsCollector {
     }
 
     // only stored transfers count here, so a 422 for insufficient funds is not seen, a bit more lenient than redis
-    private int countInDatabase(DSLContext tx, long accountId) {
+    private int countInDatabase(long accountId) {
         OffsetDateTime windowStart = OffsetDateTime.ofInstant(clock.instant().minus(config.velocityWindow()), ZoneOffset.UTC);
-        return tx.fetchCount(TRANSFERS,
+        return db.fetchCount(TRANSFERS,
                 TRANSFERS.FROM_ACCOUNT_ID.eq(accountId).and(TRANSFERS.CREATED_AT.gt(windowStart)));
     }
 

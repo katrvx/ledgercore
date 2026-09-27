@@ -56,7 +56,7 @@ public class App {
         LedgerService ledgerService = new LedgerService(accountRepository, ledgerRepository);
         TransferService transferService = new TransferService(
                 accountRepository, new TransferRepository(db), ledgerRepository,
-                new FraudFactsCollector(redis, config.fraud(), Clock.systemUTC()), FraudEngine.fromConfig(config.fraud()));
+                new FraudFactsCollector(db, redis, config.fraud(), Clock.systemUTC()), FraudEngine.fromConfig(config.fraud()));
         IdempotencyService idempotencyService = new IdempotencyService(
                 db, new IdempotencyCache(redis), new IdempotencyRepository(db));
 

@@ -5,7 +5,9 @@ import com.ledgercore.http.PathId;
 import com.ledgercore.http.Problem;
 import com.ledgercore.http.RequestBody;
 import com.ledgercore.idempotency.IdempotencyService;
+import com.ledgercore.idempotency.IdempotentOperation;
 import com.ledgercore.idempotency.StoredResponse;
+import org.jooq.DSLContext;
 import spark.Request;
 import spark.Response;
 import spark.Service;
@@ -29,7 +31,20 @@ public class TransferRoutes {
 
     private String create(Request request, Response response) {
         CreateTransferRequest body = Json.read(RequestBody.read(request), CreateTransferRequest.class);
-        StoredResponse result = idempotency.run(request, tx -> toResponse(transfers.transfer(tx, body)));
+        StoredResponse result = idempotency.run(request, new IdempotentOperation() {
+            private int attemptsInWindow;
+
+            // redis first, so a slow redis never keeps a database connection busy
+            @Override
+            public void beforeTransaction() {
+                attemptsInWindow = transfers.recordAttempt(body);
+            }
+
+            @Override
+            public StoredResponse inTransaction(DSLContext tx) {
+                return toResponse(transfers.transfer(tx, body, attemptsInWindow));
+            }
+        });
         return reply(response, result);
     }
 

@@ -16,7 +16,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Optional;
-import java.util.function.Function;
 
 public class IdempotencyService {
 
@@ -33,7 +32,7 @@ public class IdempotencyService {
     }
 
     // runs the action once per key and gives every retry the same response back
-    public StoredResponse run(Request request, Function<DSLContext, StoredResponse> action) {
+    public StoredResponse run(Request request, IdempotentOperation operation) {
         String key = validKey(request.headers("Idempotency-Key"));
         String hash = requestHash(request);
 
@@ -49,7 +48,7 @@ public class IdempotencyService {
             throw new ConflictException("a request with this Idempotency-Key is still in progress");
         }
         try {
-            IdempotencyRecord record = execute(key, hash, action);
+            IdempotencyRecord record = execute(key, hash, operation);
             // saved before the lock goes, so a retry never sees neither a lock nor a response
             cache.save(key, record);
             return replay(record, hash);
@@ -59,10 +58,12 @@ public class IdempotencyService {
     }
 
     // the key row is written in the same transaction as the money movement
-    private IdempotencyRecord execute(String key, String hash, Function<DSLContext, StoredResponse> action) {
+    private IdempotencyRecord execute(String key, String hash, IdempotentOperation operation) {
         try {
+            // inside the try, so a business error from the first step is saved like any other
+            operation.beforeTransaction();
             return db.transactionResult(trx -> {
-                StoredResponse response = action.apply(trx.dsl());
+                StoredResponse response = operation.inTransaction(trx.dsl());
                 IdempotencyRecord record = new IdempotencyRecord(hash, response);
                 repository.insert(trx.dsl(), key, record);
                 return record;

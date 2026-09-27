@@ -149,11 +149,12 @@ class FraudFactsCollectorSpec extends Specification {
     }
 
     private FraudFactsCollector collector(Redis redis) {
-        new FraudFactsCollector(redis, CONFIG, clock)
+        new FraudFactsCollector(DSL.using(dataSource, SQLDialect.POSTGRES), redis, CONFIG, clock)
     }
 
     private FraudFacts collect(FraudFactsCollector collector, long from, long to, long amount) {
-        collector.collect(DSL.using(dataSource, SQLDialect.POSTGRES), from, to, amount)
+        // same order as a transfer: count the attempt first, then read the facts
+        collector.collect(DSL.using(dataSource, SQLDialect.POSTGRES), from, to, amount, collector.recordAttempt(from))
     }
 
     private static String velocityKey(long accountId) {
