@@ -320,7 +320,8 @@ components:
           enum: [UP, DOWN]
         redis:
           type: string
-          enum: [UP, DOWN]
+          enum: [UP, DOWN, DISABLED]
+          description: DISABLED when REDIS_URL is not set. The service then uses the database for idempotency and the velocity rule.
 
     CreateAccountRequest:
       type: object

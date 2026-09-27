@@ -35,12 +35,11 @@ public class HealthRoutes {
         // without redis the app still works, only slower, so only the database decides
         http.get("/ready", (req, res) -> {
             boolean databaseUp = databaseIsUp();
-            boolean redisUp = redisIsUp();
             res.type("application/json");
             if (!databaseUp) {
                 res.status(503);
             }
-            return Json.write(new Readiness(upOrDown(databaseUp), upOrDown(databaseUp), upOrDown(redisUp)));
+            return Json.write(new Readiness(upOrDown(databaseUp), upOrDown(databaseUp), redisState()));
         });
     }
 
@@ -51,6 +50,14 @@ public class HealthRoutes {
             log.warn("database is not reachable: {}", e.getMessage());
             return false;
         }
+    }
+
+    // not configured is a setting, not an outage, so it gets its own word
+    private String redisState() {
+        if (!redis.isEnabled()) {
+            return "DISABLED";
+        }
+        return upOrDown(redisIsUp());
     }
 
     private boolean redisIsUp() {

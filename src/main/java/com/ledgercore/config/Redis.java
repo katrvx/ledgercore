@@ -26,7 +26,13 @@ public class Redis implements AutoCloseable {
     private Instant nextConnectAttempt = Instant.MIN;
     private final AtomicBoolean up = new AtomicBoolean(true);
 
+    // url null means redis is not configured: every call fails right away and nothing is logged as an outage
     public Redis(String url) {
+        if (url == null) {
+            client = null;
+            log.info("redis is not configured, using the database instead");
+            return;
+        }
         client = RedisClient.create(url);
         client.setOptions(ClientOptions.builder()
                 // when redis is down, fail right away so the caller can fall back to the database
@@ -38,6 +44,9 @@ public class Redis implements AutoCloseable {
 
     // every command goes through here, so an outage is logged once when it starts and once when it ends
     public <T> T call(Function<RedisCommands<String, String>, T> command) {
+        if (!isEnabled()) {
+            throw new RedisException("redis is not configured");
+        }
         T result;
         try {
             result = command.apply(commands());
@@ -51,6 +60,10 @@ public class Redis implements AutoCloseable {
             log.info("redis is back");
         }
         return result;
+    }
+
+    public boolean isEnabled() {
+        return client != null;
     }
 
     // connects on first use, so the app also starts when redis is down
@@ -80,6 +93,8 @@ public class Redis implements AutoCloseable {
         if (connection != null) {
             connection.close();
         }
-        client.shutdown(Duration.ZERO, Duration.ofSeconds(2));
+        if (client != null) {
+            client.shutdown(Duration.ZERO, Duration.ofSeconds(2));
+        }
     }
 }

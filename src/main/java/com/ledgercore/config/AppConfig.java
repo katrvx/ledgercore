@@ -9,7 +9,8 @@ public record AppConfig(int port, String databaseUrl, String databaseUser, Strin
                 Env.required("DATABASE_URL"),
                 Env.required("DATABASE_USER"),
                 Env.required("DATABASE_PASSWORD"),
-                Env.required("REDIS_URL"),
+                // without redis the service still works, idempotency and velocity then use the database
+                Env.optional("REDIS_URL", null),
                 FraudConfig.fromEnv());
     }
 
