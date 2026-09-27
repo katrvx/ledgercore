@@ -17,6 +17,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew check
 
+      # the image and the kubernetes manifests are only used at deploy time, so check them on every push too
+      - name: build the docker image
+        run: docker build -t ledgercore .
+      - name: validate the kubernetes manifests
+        run: docker run --rm -v "$PWD/k8s:/k8s:ro" ghcr.io/yannh/kubeconform:v0.8.0 -strict -summary /k8s
+
       # the html report for reading, the xml results because they keep each test's output and server logs
       - name: upload test reports
         if: failure()
