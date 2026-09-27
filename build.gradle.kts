@@ -4,6 +4,7 @@ plugins {
     application
     jacoco
     id("org.jooq.jooq-codegen-gradle") version "3.21.9"
+    id("io.gatling.gradle") version "3.15.1.3"
 }
 
 group = "com.ledgercore"
@@ -149,4 +150,19 @@ tasks.jacocoTestCoverageVerification {
 
 tasks.check {
     dependsOn(tasks.jacocoTestReport, tasks.jacocoTestCoverageVerification)
+}
+
+// load test settings come from -P properties, scripts/load-test.sh sets them for every run
+// the gatling jvm keeps the plugin defaults (-Xmx1G and the --add-opens gatling needs)
+gatling {
+    systemProperties = mapOf(
+        "baseUrl" to (findProperty("baseUrl") ?: "http://localhost:8080"),
+        "accounts" to (findProperty("accounts") ?: "1000"),
+        "rate" to (findProperty("rate") ?: "50"),
+        "seconds" to (findProperty("seconds") ?: "30"))
+}
+
+// the simulation is only run by scripts/load-test.sh, but check keeps it compiling
+tasks.check {
+    dependsOn(tasks.named("compileGatlingJava"))
 }
