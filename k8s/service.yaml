@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledgercore
+  labels:
+    app: ledgercore
+spec:
+  # only reachable inside the cluster: the api has no authentication of its own
+  type: ClusterIP
+  selector:
+    app: ledgercore
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,13 @@
+# everything except the password; the fraud limits use the defaults from FraudConfig unless set here
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ledgercore-config
+  labels:
+    app: ledgercore
+data:
+  PORT: "8080"
+  DATABASE_URL: jdbc:postgresql://postgres:5432/ledgercore
+  DATABASE_USER: ledgercore
+  # leave REDIS_URL out to run without redis, /ready then reports it as DISABLED
+  REDIS_URL: redis://redis:6379
