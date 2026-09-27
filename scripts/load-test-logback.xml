@@ -1,0 +1,17 @@
+<!-- used only by scripts/load-test.sh: the normal json log plus hikari pool stats -->
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="com.ledgercore.config.JsonLogLayout"/>
+        </encoder>
+    </appender>
+
+    <logger name="org.eclipse.jetty" level="WARN"/>
+    <logger name="org.jooq.Constants" level="WARN"/>
+    <!-- the housekeeper logs "stats (total, idle, active, waiting)" at debug on every run -->
+    <logger name="com.zaxxer.hikari.pool.HikariPool" level="DEBUG"/>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>
