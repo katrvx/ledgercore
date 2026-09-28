@@ -185,6 +185,17 @@ class SchemaSpec extends Specification {
         e.message.contains("transfers_status_known")
     }
 
+    def "completed transfers have an index by sender and recipient for the new recipient rule"() {
+        when:
+        def index = sql.firstRow("select indexdef from pg_indexes where indexname = 'transfers_completed_from_to_idx'")
+
+        then:
+        index != null
+        index.indexdef.contains("(from_account_id, to_account_id)")
+        index.indexdef.contains("WHERE")
+        index.indexdef.contains("COMPLETED")
+    }
+
     def "database rejects a second row with the same idempotency key"() {
         given:
         sql.execute("insert into idempotency_keys (key, request_hash, status, response_body) values ('dup', 'h', 201, '{}')")
