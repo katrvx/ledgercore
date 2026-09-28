@@ -24,7 +24,7 @@ public class LedgerService {
     public TransactionPage history(long accountId, String limitParam, String cursorParam) {
         int limit = parseLimit(limitParam);
         Long before = cursorParam == null ? null : Cursor.decode(cursorParam);
-        if (accounts.findById(accountId).isEmpty()) {
+        if (accounts.findCustomer(accountId).isEmpty()) {
             throw new NotFoundException("account " + accountId + " not found");
         }
         // one extra row tells if there is a next page without a second query

@@ -25,11 +25,15 @@ public class AccountRepository {
         return toAccount(record);
     }
 
-    public Optional<Account> findById(long id) {
-        return findById(db, id);
+    // system accounts are internal, so the api only ever looks up customer accounts
+    public Optional<Account> findCustomer(long id) {
+        return db.selectFrom(ACCOUNTS)
+                .where(ACCOUNTS.ID.eq(id).and(ACCOUNTS.TYPE.eq(AccountType.CUSTOMER.name())))
+                .fetchOptional()
+                .map(this::toAccount);
     }
 
-    // inside a transaction pass the transaction, otherwise the read takes a second pool connection
+    // takes the open transaction, otherwise the read would use a second pool connection
     public Optional<Account> findById(DSLContext ctx, long id) {
         return ctx.selectFrom(ACCOUNTS)
                 .where(ACCOUNTS.ID.eq(id))

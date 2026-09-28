@@ -49,7 +49,7 @@ class DepositApiSpec extends Specification {
 
     def "deposit is a transfer from the funding account and returns 201"() {
         given:
-        def fundingBefore = balance(funding)
+        def fundingBefore = fundingBalance()
 
         when:
         def response = client.post("/accounts/$alice/deposits", '{"amount":5000}')
@@ -66,7 +66,7 @@ class DepositApiSpec extends Specification {
 
         and:
         balance(alice) == 5000
-        balance(funding) == fundingBefore - 5000
+        fundingBalance() == fundingBefore - 5000
     }
 
     def "deposit writes two ledger entries"() {
@@ -148,7 +148,7 @@ class DepositApiSpec extends Specification {
     def "deposit fails with 422 when the balance would overflow"() {
         given:
         sql.executeUpdate("update accounts set balance = ? where id = ?", [Long.MAX_VALUE - 10, alice])
-        def fundingBefore = balance(funding)
+        def fundingBefore = fundingBalance()
 
         when:
         def response = client.post("/accounts/$alice/deposits", '{"amount":100}')
@@ -157,13 +157,18 @@ class DepositApiSpec extends Specification {
         response.statusCode() == 422
         json.parseText(response.body()).detail == "amount would overflow an account balance"
         balance(alice) == Long.MAX_VALUE - 10
-        balance(funding) == fundingBefore
+        fundingBalance() == fundingBefore
     }
 
     private long createAccount(String currency) {
         def response = client.post("/accounts", """{"ownerName":"test","currency":"$currency"}""")
         assert response.statusCode() == 201
         json.parseText(response.body()).id as long
+    }
+
+    // system accounts are hidden from the api, so their balance is read from the database
+    private long fundingBalance() {
+        sql.firstRow("select balance from accounts where id = ?", [funding]).balance as long
     }
 
     private long balance(long accountId) {

@@ -74,6 +74,18 @@ class AccountApiSpec extends Specification {
         json.parseText(response.body()) == created
     }
 
+    def "a system funding account is hidden: #path returns 404"() {
+        when:
+        def response = client.get(path)
+
+        then:
+        response.statusCode() == 404
+        json.parseText(response.body()).detail == "account 1 not found"
+
+        where:
+        path << ["/accounts/1", "/accounts/1/transactions"]
+    }
+
     def "get unknown account returns 404 problem"() {
         when:
         def response = client.get("/accounts/999999999")
@@ -124,6 +136,7 @@ class AccountApiSpec extends Specification {
         "currency has no funding"       | '{"ownerName":"Alice","currency":"JPY"}'                     || "currency JPY is not supported"
         "body tries to set the balance" | '{"ownerName":"Alice","currency":"EUR","balance":100}'       || "unknown field: balance"
         "body tries to set the type"    | '{"ownerName":"Alice","currency":"EUR","type":"SYSTEM"}'     || "unknown field: type"
+        "a field is sent twice"         | '{"ownerName":"Alice","ownerName":"Bob","currency":"EUR"}'   || "request body has the same field twice"
         "body is not json"              | 'not json'                                                   || "request body is not valid json"
         "body is empty"                 | ''                                                           || "request body is not valid json"
         "body is null"                  | 'null'                                                       || "request body is required"

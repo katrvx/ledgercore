@@ -23,7 +23,7 @@ public class AccountService {
     }
 
     public Account get(long id) {
-        return accounts.findById(id)
+        return accounts.findCustomer(id)
                 .orElseThrow(() -> new NotFoundException("account " + id + " not found"));
     }
 
