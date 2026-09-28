@@ -31,8 +31,7 @@ public class FraudFactsCollector {
         this.clock = clock;
     }
 
-    // counts this attempt in the sliding window, with no transaction open:
-    // a slow redis call inside a transaction held a pool connection and made other requests queue
+    // counts this attempt before any transaction opens, so a slow redis never holds a database connection
     public int recordAttempt(long accountId) {
         try {
             return countInRedis(accountId);

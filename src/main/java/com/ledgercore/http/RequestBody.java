@@ -40,8 +40,7 @@ public class RequestBody {
         }
     }
 
-    // spark's own request wrapper copies the whole body into memory unless Transfer-Encoding is exactly "chunked",
-    // and jetty also streams "gzip, chunked", so this reads from the jetty request underneath the wrapper
+    // reads the jetty request under spark's wrapper, which would copy a whole "gzip, chunked" body into memory
     private static byte[] readAtMost(HttpServletRequest raw, int limit) {
         try {
             InputStream in;
@@ -56,8 +55,7 @@ public class RequestBody {
         }
     }
 
-    // not InputStream.readNBytes: when it already has enough bytes it still asks for 0 more,
-    // and jetty blocks on that until the client sends something or goes away
+    // not readNBytes: at the end it asks for 0 more bytes, and jetty blocks on that until the client sends something
     private static byte[] readUpTo(InputStream in, int limit) throws IOException {
         byte[] buffer = new byte[limit];
         int total = 0;

@@ -98,8 +98,7 @@ class LockOrderSpec extends Specification {
         }
     }
 
-    // in opposite order both transactions get here holding one row each
-    // in id order the second one is still waiting for the first row, so the wait times out
+    // in opposite order both get here holding one row, in id order the second still waits and this times out
     private static void waitForOther(CyclicBarrier barrier) {
         try {
             barrier.await(1, TimeUnit.SECONDS)

@@ -126,8 +126,7 @@ class RequestValidationSpec extends Specification {
         json.substring(0, json.length() - 1) + " " * (size - json.length()) + "}"
     }
 
-    // raw socket, so the test controls exactly what is sent and can leave a body unfinished.
-    // it writes once and never after the server may have answered, so a fast close can't break the test
+    // raw socket that writes once and never after the server may answer, so a fast close can't break the test
     private String rawRequest(String headers, String body) {
         def socket = new Socket("localhost", app.port())
         socket.soTimeout = 10_000
@@ -142,8 +141,7 @@ class RequestValidationSpec extends Specification {
         }
     }
 
-    // one chunk that promises 32 KB, of which only the limit plus one byte is sent:
-    // the server needs every byte to reach its limit, so it has nothing unread when it closes
+    // a chunk that promises 32 KB but sends the limit plus one byte, so the server reads every byte before it closes
     private static String unfinishedChunk() {
         "8000\r\n" + "x" * (MAX_BODY + 1)
     }
