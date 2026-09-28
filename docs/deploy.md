@@ -2,6 +2,8 @@
 
 This is how I deploy LedgerCore to Google Cloud: the service on Cloud Run, the database on Cloud SQL for PostgreSQL 18. Every step is a command you run yourself. Nothing here is automated, and the commands that cost money are marked.
 
+I deployed it this way on 2026-09-27: `/ready` answered `UP` with the database `UP` and Redis `DISABLED`, a request without a token got 403, and a deposit and a transfer worked. The commands work in bash and in zsh, the default shell on macOS (see "Problems I hit on the first deploy" at the end).
+
 ## What runs where
 
 | Part | Where | Why |
@@ -35,28 +37,40 @@ Things that surprised me:
 
 ## 0. Before you start
 
-You need the gcloud CLI, logged in (`gcloud auth login`), and a project with a billing account linked. Creating the project and linking billing are done in the console, by hand.
+You need the gcloud CLI, logged in (`gcloud auth login`), a project, and a billing account. Creating the project and the billing account are done in the console, by hand.
+
+Every variable is written with braces, like `${REGION}`. In zsh, `$REGION:l` means "REGION in lowercase", so without braces a colon after a variable can silently eat the next letter.
 
 ```bash
 PROJECT_ID=your-project-id
 REGION=us-central1
 BILLING_ACCOUNT_ID=XXXXXX-XXXXXX-XXXXXX   # gcloud billing accounts list
-IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/ledgercore/ledgercore:1.0.0
-SERVICE_ACCOUNT=ledgercore-run@$PROJECT_ID.iam.gserviceaccount.com
+IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/ledgercore/ledgercore:1.0.0"
+SERVICE_ACCOUNT="ledgercore-run@${PROJECT_ID}.iam.gserviceaccount.com"
 
-gcloud config set project $PROJECT_ID
+gcloud config set project "${PROJECT_ID}"
+```
+
+Link the billing account to the project, and check it. Without this, every paid API fails to turn on with `UREQ_PROJECT_BILLING_NOT_FOUND`:
+
+```bash
+gcloud billing projects link "${PROJECT_ID}" --billing-account="${BILLING_ACCOUNT_ID}"
+gcloud billing projects describe "${PROJECT_ID}" --format='value(billingEnabled)'
+# must print: True
 ```
 
 ## 1. A budget alert, before anything else
+
+The amount must be in the currency of your billing account. Mine is in GBP, so I used 12 GBP:
 
 ```bash
 gcloud services enable billingbudgets.googleapis.com
 
 gcloud billing budgets create \
-  --billing-account=$BILLING_ACCOUNT_ID \
+  --billing-account="${BILLING_ACCOUNT_ID}" \
   --display-name="ledgercore" \
-  --budget-amount=15USD \
-  --filter-projects=projects/$PROJECT_ID \
+  --budget-amount=12GBP \
+  --filter-projects="projects/${PROJECT_ID}" \
   --credit-types-treatment=exclude-all-credits \
   --threshold-rule=percent=0.5 \
   --threshold-rule=percent=0.9 \
@@ -64,9 +78,10 @@ gcloud billing budgets create \
   --threshold-rule=percent=1.0,basis=forecasted-spend
 ```
 
-- The billing account administrators get an email at 50%, 90% and 100% of $15, and when the forecast for the month reaches $15.
-- `exclude-all-credits` makes the budget count the real cost. Without it, the free trial credits pay for everything, the spend stays at $0 and no alert would ever come.
-- If your billing account is not in USD, write the amount in its currency (for example `15EUR`) or leave the currency out.
+On my first try this command failed with `INVALID_ARGUMENT`. Billing was not linked to the project yet at that point, which is probably why, but I did not confirm it. I created the same budget in the console instead: Billing, Budgets and alerts, Create budget, scope set to this project, credits unticked, 12 GBP, alerts at 50%, 90% and 100% of actual spend and 100% of forecasted spend. Both ways give the same budget.
+
+- The billing account administrators get an email at each threshold.
+- Excluding credits makes the budget count the real cost. Otherwise the free trial credits pay for everything, the spend stays at 0 and no alert would ever come.
 - **A budget only sends alerts. It does not stop spending.** Deleting the resources (step 9) is what stops it.
 
 ## 2. Turn on the APIs
@@ -79,10 +94,10 @@ gcloud services enable run.googleapis.com sqladmin.googleapis.com \
 ## 3. Build and push the image
 
 ```bash
-gcloud artifacts repositories create ledgercore --repository-format=docker --location=$REGION
-gcloud auth configure-docker $REGION-docker.pkg.dev
+gcloud artifacts repositories create ledgercore --repository-format=docker --location=${REGION}
+gcloud auth configure-docker ${REGION}-docker.pkg.dev
 
-docker buildx build --platform linux/amd64 -t $IMAGE --push .
+docker buildx build --platform linux/amd64 -t ${IMAGE} --push .
 ```
 
 Cloud Run only runs `linux/amd64` images. On an Apple Silicon Mac the Dockerfile builds the jar natively and only the small final stage is amd64, so this takes about a minute.
@@ -94,7 +109,7 @@ gcloud sql instances create ledgercore-db \
   --database-version=POSTGRES_18 \
   --edition=ENTERPRISE \
   --tier=db-f1-micro \
-  --region=$REGION \
+  --region=${REGION} \
   --storage-type=SSD \
   --storage-size=10GB \
   --availability-type=zonal \
@@ -107,8 +122,8 @@ The password is made up by the machine, goes straight into Cloud SQL and Secret 
 
 ```bash
 DB_PASSWORD="$(openssl rand -base64 24)"
-gcloud sql users create ledgercore --instance=ledgercore-db --password="$DB_PASSWORD"
-printf '%s' "$DB_PASSWORD" | gcloud secrets create ledgercore-db-password \
+gcloud sql users create ledgercore --instance=ledgercore-db --password="${DB_PASSWORD}"
+printf '%s' "${DB_PASSWORD}" | gcloud secrets create ledgercore-db-password \
   --replication-policy=automatic --data-file=-
 unset DB_PASSWORD
 ```
@@ -121,28 +136,35 @@ The service runs its Flyway migrations when it starts, so there is nothing else 
 gcloud iam service-accounts create ledgercore-run --display-name="ledgercore on cloud run"
 
 # connect to cloud sql
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member=serviceAccount:$SERVICE_ACCOUNT --role=roles/cloudsql.client
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member=serviceAccount:${SERVICE_ACCOUNT} --role=roles/cloudsql.client
 
 # read this one secret, and no other
 gcloud secrets add-iam-policy-binding ledgercore-db-password \
-  --member=serviceAccount:$SERVICE_ACCOUNT --role=roles/secretmanager.secretAccessor
+  --member=serviceAccount:${SERVICE_ACCOUNT} --role=roles/secretmanager.secretAccessor
 ```
 
 ## 6. Deploy
 
-The JDBC URL names the Cloud SQL instance, and Google's socket factory (a runtime dependency in `build.gradle.kts`) opens the connection with TLS, using the service account. The database port is never opened to the internet. The URL contains `?`, `&` and `=`, so it goes in a small file instead of the command line. The file has no secrets, only the project id.
+The JDBC URL names the Cloud SQL instance, and Google's socket factory (a runtime dependency in `build.gradle.kts`) opens the connection with TLS, using the service account. The database port is never opened to the internet. The URL contains `?`, `&` and `=`, so it goes in a small file instead of the command line. The file has no secrets, only the project id, and `.gitignore` keeps it out of the repo.
+
+The connection name is read from Cloud SQL instead of being put together by hand. My first deploy failed because zsh turned `$PROJECT_ID:$REGION:ledgercore-db` into `...:us-central1edgercore-db`.
 
 ```bash
+CONNECTION_NAME=$(gcloud sql instances describe ledgercore-db --format='value(connectionName)')
+echo "${CONNECTION_NAME}"
+# must print: your-project-id:us-central1:ledgercore-db
+
 cat > cloud-run-env.yaml <<EOF
-DATABASE_URL: "jdbc:postgresql:///ledgercore?cloudSqlInstance=$PROJECT_ID:$REGION:ledgercore-db&socketFactory=com.google.cloud.sql.postgres.SocketFactory"
+DATABASE_URL: "jdbc:postgresql:///ledgercore?cloudSqlInstance=${CONNECTION_NAME}&socketFactory=com.google.cloud.sql.postgres.SocketFactory"
 DATABASE_USER: "ledgercore"
 EOF
+cat cloud-run-env.yaml
 
 gcloud run deploy ledgercore \
-  --image=$IMAGE \
-  --region=$REGION \
-  --service-account=$SERVICE_ACCOUNT \
+  --image=${IMAGE} \
+  --region=${REGION} \
+  --service-account=${SERVICE_ACCOUNT} \
   --no-allow-unauthenticated \
   --env-vars-file=cloud-run-env.yaml \
   --set-secrets=DATABASE_PASSWORD=ledgercore-db-password:latest \
@@ -154,7 +176,7 @@ gcloud run deploy ledgercore \
 ```
 
 - `--no-allow-unauthenticated`: the API has no login of its own, so a public URL would let anyone open accounts and make deposits. Only Google accounts with the Cloud Run Invoker role (or Admin, like the project owner) can call it.
-- `--max-instances=2`: each instance keeps up to 10 database connections, and `db-f1-micro` allows 25 by default. Two instances use 20.
+- `--max-instances=2`: each instance keeps up to 10 database connections (`DATABASE_POOL_SIZE`), and `db-f1-micro` allows 25 by default. Two instances use 20.
 - `--min-instances=0`: no cost while nobody calls it. The first request after a pause waits for the JVM to start and for Flyway, a few seconds. `--cpu-boost` gives more CPU during that start.
 - `REDIS_URL` is not set, so the service runs on the database alone.
 - Cloud Run sends SIGTERM before it stops an instance, and the service then closes the HTTP server and the database pool.
@@ -164,7 +186,7 @@ gcloud run deploy ledgercore \
 The easiest way is the proxy, which adds your identity to every request:
 
 ```bash
-gcloud run services proxy ledgercore --region=$REGION --port=8080
+gcloud run services proxy ledgercore --region=${REGION} --port=8080
 # in another terminal:
 curl -s localhost:8080/ready
 ```
@@ -172,18 +194,18 @@ curl -s localhost:8080/ready
 Or directly with an identity token:
 
 ```bash
-URL=$(gcloud run services describe ledgercore --region=$REGION --format='value(status.url)')
+URL=$(gcloud run services describe ledgercore --region=${REGION} --format='value(status.url)')
 TOKEN=$(gcloud auth print-identity-token)
 
-curl -s -H "Authorization: Bearer $TOKEN" $URL/ready
+curl -s -H "Authorization: Bearer ${TOKEN}" ${URL}/ready
 # {"status":"UP","database":"UP","redis":"DISABLED"}
 
-A=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -X POST $URL/accounts -d '{"ownerName":"Alice","currency":"EUR"}')
-echo $A
+A=$(curl -s -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -X POST ${URL}/accounts -d '{"ownerName":"Alice","currency":"EUR"}')
+echo ${A}
 ```
 
-A request without a valid token is refused by Cloud Run itself (401 or 403) and never reaches the service.
+A request without a token is refused by Cloud Run itself with 403 and never reaches the service. I checked this after deploying.
 
 ## 8. Logs
 
@@ -198,11 +220,11 @@ jsonPayload.requestId="the id from the X-Request-Id header"
 ## 9. Delete everything
 
 ```bash
-gcloud run services delete ledgercore --region=$REGION
+gcloud run services delete ledgercore --region=${REGION}
 gcloud sql instances delete ledgercore-db
 gcloud secrets delete ledgercore-db-password
-gcloud artifacts repositories delete ledgercore --location=$REGION
-gcloud iam service-accounts delete $SERVICE_ACCOUNT
+gcloud artifacts repositories delete ledgercore --location=${REGION}
+gcloud iam service-accounts delete ${SERVICE_ACCOUNT}
 rm cloud-run-env.yaml
 ```
 
@@ -215,3 +237,9 @@ The budget costs nothing and can stay, or you can delete it in the console under
 - Redis on Memorystore for the fast idempotency path and velocity counting (about $36 more per month for 1 GiB).
 - An edition with an SLA and high availability instead of `db-f1-micro`.
 - A real login for the API.
+
+## Problems I hit on the first deploy
+
+1. **Billing was not linked to the project.** `gcloud services enable` failed with `UREQ_PROJECT_BILLING_NOT_FOUND`. Step 0 now links it and checks `billingEnabled`.
+2. **`gcloud billing budgets create` failed with `INVALID_ARGUMENT`**, probably because billing was not linked yet. I created the budget in the console instead, 12 GBP, because my billing account is in GBP.
+3. **zsh ate a letter of the Cloud SQL connection name.** `"$PROJECT_ID:$REGION:ledgercore-db"` became `ledgercore-demo:us-central1edgercore-db`, because in zsh `:l` after a variable means lowercase. The deploy failed until I fixed it. Now every variable has braces, and the connection name comes from `gcloud sql instances describe`.
