@@ -65,6 +65,23 @@ class RequestIdSpec extends Specification {
         json.parseText(response.body()).requestId == "trace-me"
     }
 
+    def "health and ready checks are not in the access log"() {
+        given:
+        def logs = new LogCapture()
+
+        when:
+        client.get("/health")
+        client.get("/ready")
+        client.get("/accounts/999999999")
+        LogCapture.waitUntil { !logs.events("access").isEmpty() }
+
+        then:
+        logs.events("access")*.formattedMessage.collect { it.split(" ")[1] } == ["/accounts/999999999"]
+
+        cleanup:
+        logs.close()
+    }
+
     def "the access log has method, path, status and time, and never the body"() {
         given:
         def logs = new LogCapture()
