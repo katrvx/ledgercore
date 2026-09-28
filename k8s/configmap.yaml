@@ -11,3 +11,5 @@ data:
   DATABASE_USER: ledgercore
   # leave REDIS_URL out to run without redis, /ready then reports it as DISABLED
   REDIS_URL: redis://redis:6379
+  # replicas times this number must stay below the database's max_connections
+  DATABASE_POOL_SIZE: "10"

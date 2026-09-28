@@ -1,0 +1,12 @@
+# a node drain or a cluster upgrade may take pods away, but never the last one
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ledgercore
+  labels:
+    app: ledgercore
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ledgercore
