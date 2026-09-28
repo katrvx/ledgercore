@@ -237,6 +237,7 @@ class TransferApiSpec extends Specification {
         "amount is zero"           | '{"fromAccountId":ALICE,"toAccountId":BOB,"amount":0,"currency":"EUR"}'             || "amount must be positive"
         "amount is negative"       | '{"fromAccountId":ALICE,"toAccountId":BOB,"amount":-5,"currency":"EUR"}'            || "amount must be positive"
         "amount is not whole"      | '{"fromAccountId":ALICE,"toAccountId":BOB,"amount":100.5,"currency":"EUR"}'         || "invalid value for field amount"
+        "amount is sent twice"     | '{"fromAccountId":ALICE,"toAccountId":BOB,"amount":900,"amount":1,"currency":"EUR"}' || "request body has the same field twice"
         "amount is a string"       | '{"fromAccountId":ALICE,"toAccountId":BOB,"amount":"100","currency":"EUR"}'         || "invalid value for field amount"
         "currency is missing"      | '{"fromAccountId":ALICE,"toAccountId":BOB,"amount":100}'                            || "currency is required"
         "currency is not iso"      | '{"fromAccountId":ALICE,"toAccountId":BOB,"amount":100,"currency":"eur"}'           || "currency must be an ISO 4217 code like EUR"

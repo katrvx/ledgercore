@@ -1,6 +1,8 @@
 package com.ledgercore.http;
 
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.StreamReadFeature;
+import tools.jackson.core.exc.StreamReadException;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.SerializationFeature;
@@ -10,8 +12,9 @@ import tools.jackson.databind.json.JsonMapper;
 
 public class Json {
 
-    // strict on purpose: money fields must be whole numbers, not "100" or 100.5
+    // strict on purpose: money fields must be whole numbers, not "100" or 100.5, and no field may come twice
     private static final JsonMapper MAPPER = JsonMapper.builder()
+            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
             .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
@@ -29,6 +32,12 @@ public class Json {
                 throw new ValidationException("request body is not valid json");
             }
             throw new ValidationException("invalid value for field " + e.getPath().getLast().getPropertyName());
+        } catch (StreamReadException e) {
+            // jackson has no exception type of its own for this, only the message tells
+            if (e.getOriginalMessage().startsWith("Duplicate")) {
+                throw new ValidationException("request body has the same field twice");
+            }
+            throw new ValidationException("request body is not valid json");
         } catch (JacksonException e) {
             throw new ValidationException("request body is not valid json");
         }
