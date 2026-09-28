@@ -32,6 +32,8 @@ configurations[evaluation.implementationConfigurationName].extendsFrom(configura
 
 dependencies {
     implementation("com.sparkjava:spark-core:2.9.4")
+    // spark pins jetty 9.4.48, this moves every jetty module to the last 9.4 release with its security fixes
+    implementation(platform("org.eclipse.jetty:jetty-bom:9.4.58.v20250814"))
     implementation("ch.qos.logback:logback-classic:1.5.38")
     implementation("tools.jackson.core:jackson-databind:3.2.3")
     implementation("org.postgresql:postgresql:42.7.13")
