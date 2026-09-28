@@ -29,7 +29,7 @@ class ReadySpec extends Specification {
     def "ready returns 503 when the database is not reachable"() {
         given:
         def dataSource = Database.connect(TestEnv.appConfig())
-        def redis = new Redis("redis://localhost:1")
+        def redis = new Redis("redis://localhost:1", java.time.Duration.ofMillis(500))
         def http = Service.ignite().port(0)
         new HealthRoutes(dataSource, redis).register(http)
         http.awaitInitialization()

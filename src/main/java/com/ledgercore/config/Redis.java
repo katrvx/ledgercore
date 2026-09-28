@@ -27,7 +27,7 @@ public class Redis implements AutoCloseable {
     private final AtomicBoolean up = new AtomicBoolean(true);
 
     // url null means redis is not configured: every call fails right away and nothing is logged as an outage
-    public Redis(String url) {
+    public Redis(String url, Duration commandTimeout) {
         if (url == null) {
             client = null;
             log.info("redis is not configured, using the database instead");
@@ -37,7 +37,7 @@ public class Redis implements AutoCloseable {
         client.setOptions(ClientOptions.builder()
                 // when redis is down, fail right away so the caller can fall back to the database
                 .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
-                .timeoutOptions(TimeoutOptions.enabled(Duration.ofMillis(500)))
+                .timeoutOptions(TimeoutOptions.enabled(commandTimeout))
                 .socketOptions(SocketOptions.builder().connectTimeout(Duration.ofSeconds(1)).build())
                 .build());
     }
@@ -66,8 +66,7 @@ public class Redis implements AutoCloseable {
         return client != null;
     }
 
-    // connects on first use, so the app also starts when redis is down
-    // once connected, lettuce reconnects by itself after an outage
+    // connects on first use so the app starts without redis, after that lettuce reconnects by itself
     private synchronized RedisCommands<String, String> commands() {
         if (connection == null) {
             connect();

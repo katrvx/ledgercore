@@ -15,4 +15,20 @@ class DatabaseSpec extends Specification {
         cleanup:
         dataSource.close()
     }
+
+    def "the pool size comes from the config"() {
+        given:
+        def config = TestEnv.appConfig()
+        def smaller = new AppConfig(config.port(), config.databaseUrl(), config.databaseUser(), config.databasePassword(),
+                3, config.redisUrl(), config.redisTimeout(), config.fraud())
+
+        when:
+        def dataSource = Database.connect(smaller)
+
+        then:
+        dataSource.maximumPoolSize == 3
+
+        cleanup:
+        dataSource?.close()
+    }
 }

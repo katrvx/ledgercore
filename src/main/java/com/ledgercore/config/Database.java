@@ -12,6 +12,7 @@ public class Database {
         hikari.setJdbcUrl(config.databaseUrl());
         hikari.setUsername(config.databaseUser());
         hikari.setPassword(config.databasePassword());
+        hikari.setMaximumPoolSize(config.databasePoolSize());
         // the default is 30 s: too long for a readiness probe, and a queue that long helps nobody
         hikari.setConnectionTimeout(5_000);
         HikariDataSource dataSource = new HikariDataSource(hikari);

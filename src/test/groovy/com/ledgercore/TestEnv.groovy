@@ -30,7 +30,12 @@ class TestEnv {
     }
 
     static AppConfig appConfig(String redisUrl, FraudConfig fraud) {
-        new AppConfig(0, POSTGRES.jdbcUrl, POSTGRES.username, POSTGRES.password, redisUrl, fraud)
+        appConfig(POSTGRES.jdbcUrl, redisUrl, Duration.ofMillis(500), fraud)
+    }
+
+    // every postgres test container has the same user and password
+    static AppConfig appConfig(String databaseUrl, String redisUrl, Duration redisTimeout, FraudConfig fraud) {
+        new AppConfig(0, databaseUrl, POSTGRES.username, POSTGRES.password, 10, redisUrl, redisTimeout, fraud)
     }
 
     static String redisUrl() {

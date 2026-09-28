@@ -50,7 +50,7 @@ class FraudFactsCollectorSpec extends Specification {
     }
 
     def setup() {
-        redis = new Redis(TestEnv.redisUrl())
+        redis = new Redis(TestEnv.redisUrl(), java.time.Duration.ofMillis(500))
         alice = insertAccount()
         bob = insertAccount()
     }
@@ -97,7 +97,7 @@ class FraudFactsCollectorSpec extends Specification {
 
     def "without redis the window is counted from stored transfers"() {
         given:
-        def collector = collector(new Redis("redis://localhost:1"))
+        def collector = collector(new Redis("redis://localhost:1", java.time.Duration.ofMillis(500)))
         2.times { insertTransfer(alice, bob, 100, "COMPLETED") }
         insertTransfer(alice, bob, 100, "DECLINED")
 

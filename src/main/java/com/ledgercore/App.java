@@ -10,6 +10,7 @@ import com.ledgercore.fraud.FraudEngine;
 import com.ledgercore.fraud.FraudFactsCollector;
 import com.ledgercore.http.ErrorHandlers;
 import com.ledgercore.http.HealthRoutes;
+import com.ledgercore.http.JettyWithoutVersion;
 import com.ledgercore.http.RequestFilters;
 import com.ledgercore.idempotency.IdempotencyCache;
 import com.ledgercore.idempotency.IdempotencyRepository;
@@ -27,6 +28,8 @@ import org.jooq.impl.DSL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Service;
+import spark.embeddedserver.EmbeddedServers;
+import spark.embeddedserver.jetty.EmbeddedJettyFactory;
 
 import java.time.Clock;
 
@@ -45,7 +48,7 @@ public class App {
     }
 
     public static void main(String[] args) {
-        App app = start(AppConfig.fromEnv());
+        App app = start(AppConfig.from(System.getenv()));
         // cloud run and kubernetes send SIGTERM and wait a few seconds before they kill the container
         Runtime.getRuntime().addShutdownHook(new Thread(app::stop, "shutdown"));
     }
@@ -54,7 +57,7 @@ public class App {
     public static App start(AppConfig config) {
         HikariDataSource dataSource = Database.connect(config);
         DSLContext db = DSL.using(dataSource, SQLDialect.POSTGRES);
-        Redis redis = new Redis(config.redisUrl());
+        Redis redis = new Redis(config.redisUrl(), config.redisTimeout());
 
         AccountRepository accountRepository = new AccountRepository(db);
         LedgerRepository ledgerRepository = new LedgerRepository(db);
@@ -66,6 +69,7 @@ public class App {
         IdempotencyService idempotencyService = new IdempotencyService(
                 db, new IdempotencyCache(redis), new IdempotencyRepository(db));
 
+        EmbeddedServers.add(EmbeddedServers.Identifiers.JETTY, new EmbeddedJettyFactory(new JettyWithoutVersion()));
         Service http = Service.ignite().port(config.port());
         new RequestFilters().register(http);
         new ErrorHandlers().register(http);

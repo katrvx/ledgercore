@@ -12,7 +12,7 @@ class RedisStateLoggingSpec extends Specification {
         given: "a redis of its own, paused and unpaused so it keeps its port"
         def container = new GenericContainer("redis:7-alpine").withExposedPorts(6379)
         container.start()
-        def redis = new Redis("redis://${container.host}:${container.getMappedPort(6379)}")
+        def redis = new Redis("redis://${container.host}:${container.getMappedPort(6379)}", java.time.Duration.ofMillis(500))
         def logs = new LogCapture()
         def docker = container.dockerClient
 
@@ -39,7 +39,7 @@ class RedisStateLoggingSpec extends Specification {
 
     def "a failed first connection is logged once"() {
         given:
-        def redis = new Redis("redis://localhost:1")
+        def redis = new Redis("redis://localhost:1", java.time.Duration.ofMillis(500))
         def logs = new LogCapture()
 
         when:

@@ -12,19 +12,36 @@ public record FraudConfig(
         int anomalyHistorySize,
         long newRecipientLimit) {
 
+    // a zero or negative limit would switch a rule off or flag everything, so it is refused
+    public FraudConfig {
+        requirePositive(velocityMaxTransfers, "velocityMaxTransfers");
+        requirePositive(velocityWindow.toMillis(), "velocityWindow");
+        requirePositive(absoluteLimit, "absoluteLimit");
+        requirePositive(anomalyMultiplier, "anomalyMultiplier");
+        requirePositive(anomalyMinHistory, "anomalyMinHistory");
+        requirePositive(anomalyHistorySize, "anomalyHistorySize");
+        requirePositive(newRecipientLimit, "newRecipientLimit");
+    }
+
     public static FraudConfig defaults() {
         return new FraudConfig(5, Duration.ofSeconds(60), 1_000_000, 10, 5, 20, 100_000);
     }
 
-    public static FraudConfig fromEnv() {
+    public static FraudConfig from(Env env) {
         FraudConfig d = defaults();
         return new FraudConfig(
-                Env.optionalInt("FRAUD_VELOCITY_MAX_TRANSFERS", d.velocityMaxTransfers()),
-                Duration.ofSeconds(Env.optionalLong("FRAUD_VELOCITY_WINDOW_SECONDS", d.velocityWindow().toSeconds())),
-                Env.optionalLong("FRAUD_ABSOLUTE_LIMIT", d.absoluteLimit()),
-                Env.optionalLong("FRAUD_ANOMALY_MULTIPLIER", d.anomalyMultiplier()),
-                Env.optionalInt("FRAUD_ANOMALY_MIN_HISTORY", d.anomalyMinHistory()),
-                Env.optionalInt("FRAUD_ANOMALY_HISTORY_SIZE", d.anomalyHistorySize()),
-                Env.optionalLong("FRAUD_NEW_RECIPIENT_LIMIT", d.newRecipientLimit()));
+                env.positiveInt("FRAUD_VELOCITY_MAX_TRANSFERS", d.velocityMaxTransfers()),
+                Duration.ofSeconds(env.positiveLong("FRAUD_VELOCITY_WINDOW_SECONDS", d.velocityWindow().toSeconds())),
+                env.positiveLong("FRAUD_ABSOLUTE_LIMIT", d.absoluteLimit()),
+                env.positiveLong("FRAUD_ANOMALY_MULTIPLIER", d.anomalyMultiplier()),
+                env.positiveInt("FRAUD_ANOMALY_MIN_HISTORY", d.anomalyMinHistory()),
+                env.positiveInt("FRAUD_ANOMALY_HISTORY_SIZE", d.anomalyHistorySize()),
+                env.positiveLong("FRAUD_NEW_RECIPIENT_LIMIT", d.newRecipientLimit()));
+    }
+
+    private static void requirePositive(long value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be positive");
+        }
     }
 }
