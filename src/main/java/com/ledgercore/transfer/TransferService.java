@@ -33,15 +33,14 @@ public class TransferService {
 
     // step one, before any transaction: checks the request and counts this attempt for the velocity rule
     public int recordAttempt(CreateTransferRequest request) {
-        validate(request);
-        if (request.fromAccountId().equals(request.toAccountId())) {
-            throw new UnprocessableException("fromAccountId and toAccountId must be different");
-        }
+        check(request);
         return fraudFacts.recordAttempt(request.fromAccountId());
     }
 
     // step two, in the transaction: moves money between two customer accounts, unless the fraud rules stop it
     public Transfer transfer(DSLContext tx, CreateTransferRequest request, int attemptsInWindow) {
+        // checked again, so this method is safe to call on its own
+        check(request);
         long fromId = request.fromAccountId();
         long toId = request.toAccountId();
         long amount = request.amount();
@@ -63,7 +62,7 @@ public class TransferService {
 
     // a deposit is a transfer from the funding account of the same currency, money from outside is not checked for fraud
     public Transfer deposit(DSLContext tx, long accountId, DepositRequest request) {
-        validate(request);
+        check(request);
         Account account = accounts.findById(tx, accountId)
                 .orElseThrow(() -> new NotFoundException("account " + accountId + " not found"));
         requireCustomer(account);
@@ -133,7 +132,7 @@ public class TransferService {
         }
     }
 
-    private void validate(CreateTransferRequest request) {
+    private void check(CreateTransferRequest request) {
         if (request == null) {
             throw new ValidationException("request body is required");
         }
@@ -146,9 +145,13 @@ public class TransferService {
         if (!Currencies.isIsoCode(request.currency())) {
             throw new ValidationException("currency must be an ISO 4217 code like EUR");
         }
+        if (request.fromAccountId().equals(request.toAccountId())) {
+            throw new UnprocessableException("fromAccountId and toAccountId must be different");
+        }
     }
 
-    private void validate(DepositRequest request) {
+    // also called before the transaction, so a bad deposit never takes a database connection
+    public void check(DepositRequest request) {
         if (request == null) {
             throw new ValidationException("request body is required");
         }

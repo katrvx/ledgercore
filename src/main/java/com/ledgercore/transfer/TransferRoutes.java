@@ -51,7 +51,17 @@ public class TransferRoutes {
     private String deposit(Request request, Response response) {
         long accountId = PathId.parse(request.params("id"), "account id");
         DepositRequest body = Json.read(RequestBody.read(request), DepositRequest.class);
-        StoredResponse result = idempotency.run(request, tx -> toResponse(transfers.deposit(tx, accountId, body)));
+        StoredResponse result = idempotency.run(request, new IdempotentOperation() {
+            @Override
+            public void beforeTransaction() {
+                transfers.check(body);
+            }
+
+            @Override
+            public StoredResponse inTransaction(DSLContext tx) {
+                return toResponse(transfers.deposit(tx, accountId, body));
+            }
+        });
         return reply(response, result);
     }
 
