@@ -1,0 +1,33 @@
+# one grouped pull request per kind of dependency, once a week
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      gradle:
+        patterns:
+          - "*"
+    # spark 2.9.4 only runs on jetty 9.4, so a jump to jetty 10 or later would break the build
+    ignore:
+      - dependency-name: "org.eclipse.jetty:jetty-bom"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
