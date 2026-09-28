@@ -2,7 +2,12 @@
 
 I load tested `POST /transfers` with Gatling on my laptop. I wanted to know three things: how many transfers per second the service handles, how fast it answers at a normal load, and what locking costs when all transfers fight over the same few accounts. Every number here comes from `scripts/load-test.sh`.
 
-The test also found a real problem: the fraud check called Redis while its database transaction was open, and a slow Redis call then blocked the connection pool. I changed that. The section "What caused the p99 spikes" shows how I found it and the same run before and after the change. All the other tables are measured on the current code, after the change.
+The test also found a real problem: the fraud check called Redis while its database transaction was open, and a slow Redis call then blocked the connection pool. I changed that. The section "What caused the p99 spikes" shows how I found it and the same run before and after the change. All the other tables are measured after that change.
+
+Two later changes matter for these tables, so I measured the affected runs again:
+
+- A request now waits at most 5 seconds for a database connection (before it was 30). I measured the overload rates, 600/s and above, again after it. The runs up to 500/s are from before it. It can't have changed them: the slowest request in those runs spent 318 ms in the server, far from 5 seconds.
+- The last changes added an index on `transfers`, strict JSON parsing and a 503 answer when the database is down, and moved Jetty from 9.4.48 to 9.4.58. I measured the steady and contention runs again after them, so those two tables describe the code in this repo. The capacity table and the before and after table were measured on Jetty 9.4.48.
 
 ## The machine and the settings
 
@@ -16,6 +21,7 @@ Everything ran on one laptop: Gatling, the app, Postgres and Redis. They share t
 | Redis | 7.4.11 in Docker, default settings |
 | App JVM | Temurin 21.0.12.1, `-Xms512m -Xmx512m`, G1 (the default) |
 | App settings | Hikari pool of 10 connections (the default), Spark and Jetty defaults |
+| Jetty | 9.4.58 for the steady and contention runs, 9.4.48 for the other tables |
 | Gatling | 3.15, JVM with the Gradle plugin defaults (`-Xmx1G`) |
 
 The app runs directly on macOS and reaches Postgres and Redis through Docker Desktop's port forwarding.
@@ -45,27 +51,43 @@ The fraud rules still run on every transfer: they read Redis and Postgres as usu
 | 300/s | 300/s | 9,000 | 0 | 4 ms | 25 ms | 117 ms | 252 ms |
 | 400/s | 400/s | 12,000 | 0 | 4 ms | 61 ms | 178 ms | 319 ms |
 | 500/s | 483.87/s | 15,000 | 0 | 4 ms | 18 ms | 39 ms | 149 ms |
-| 600/s | 486.49/s | 18,000 | 0 | 357 ms | 9,305 ms | 13,278 ms | 15,478 ms |
-| 700/s | 355.93/s | 21,000 | 0 | 8,901 ms | 34,239 ms | 34,448 ms | 34,832 ms |
-| 800/s | 705.88/s | 24,000 | 0 | 360 ms | 7,888 ms | 12,230 ms | 13,987 ms |
-| 1,000/s | 681.82/s | 30,000 | 0 | 6,853 ms | 20,947 ms | 21,818 ms | 22,446 ms |
+| 600/s | 529.41/s | 18,000 | 0 | 609 ms | 15,940 ms | 19,199 ms | 19,918 ms |
+| 700/s | 617.65/s | 21,000 | 0 | 387 ms | 7,660 ms | 12,926 ms | 13,688 ms |
+| 800/s | 648.65/s | 24,000 | 0 | 517 ms | 11,849 ms | 15,582 ms | 16,197 ms |
+| 1,000/s | 566.04/s | 30,000 | 1,267 (4.2%) | 7,010 ms | 24,101 ms | 24,981 ms | 25,411 ms |
+
+The rows from 600/s are from a separate series on a fresh database, measured after the pool wait was limited to 5 seconds.
 
 What I read from it:
 - The service kept up with the rate up to 500/s. At 600/s it fell behind and requests queued for seconds, so on this laptop the limit is between 500 and 600 transfers per second.
-- Above the limit the numbers jump around (356/s at 700/s, 706/s at 800/s). When everything is queueing on one laptop, small things decide how much gets through, so I don't read a single maximum from these rows.
-- No request failed at any rate, and the server returned no errors.
+- Above the limit it got through 529 to 649 transfers per second, and the numbers jump around from run to run. When everything is queueing on one laptop, small things decide how much gets through.
+- Up to 800/s no request failed. At 1,000/s, 1,267 requests failed, and none of them was an error answer from the service:
+  - 1,240 were `Too many open files` inside the Gatling JVM. macOS allows one process 10,240 open files, and every queued request holds a connection.
+  - 27 were `Premature close`. The service's own process hit the same limit while accepting new connections, and Jetty logged 27 warnings for it.
+- Every transfer that reached the service got a 201, and no request waited the full 5 seconds for a database connection: the slowest one spent 1.7 seconds in the server. The long waits are in front of it. Jetty has 200 threads, and new connections wait for a free one.
 - One 30 second run per rate is only a rough first look. 30 seconds is also short to see if a queue drains: 400/s ran for 120 seconds in the before and after comparison below, and it was fine on the current code.
 
 ### Steady load: 1,000 accounts, 250/s, 3 runs of 120 seconds
 
 | Run | Achieved | Requests | Failed | p50 | p95 | p99 | Max |
 |---|---|---|---|---|---|---|---|
-| 1 | 250/s | 30,000 | 0 | 4 ms | 9 ms | 23 ms | 90 ms |
-| 2 | 250/s | 30,000 | 0 | 4 ms | 8 ms | 23 ms | 88 ms |
-| 3 | 247.93/s | 30,000 | 0 | 4 ms | 8 ms | 19 ms | 94 ms |
-| **Median (range)** | 250/s (247.93 to 250) | | 0% | 4 ms (4 to 4) | 8 ms (8 to 9) | 23 ms (19 to 23) | 90 ms (88 to 94) |
+| 1 | 247.93/s | 30,000 | 0 | 4 ms | 10 ms | 26 ms | 138 ms |
+| 2 | 247.93/s | 30,000 | 0 | 4 ms | 8 ms | 21 ms | 100 ms |
+| 3 | 250/s | 30,000 | 0 | 4 ms | 9 ms | 21 ms | 105 ms |
+| **Median (range)** | 247.93/s (247.93 to 250) | | 0% | 4 ms (4 to 4) | 9 ms (8 to 10) | 21 ms (21 to 26) | 105 ms (100 to 138) |
 
-250/s is a normal working load with room to spare: about half of the limit. None of the 363 seconds in these three runs had a server side p99 over 100 ms.
+250/s is a normal working load with room to spare: about half of the limit. 2 of the 362 seconds in these three runs had a server side p99 over 100 ms, both in run 1. In both a thread was waiting for a database connection.
+
+The tail moves from one series to the next on this laptop, more than the code changes moved it. I measured this load four times in two days, each time 3 runs of 120 seconds:
+
+| When | Code | p95 median (range) | p99 median (range) | Slow seconds |
+|---|---|---|---|---|
+| night | before the last changes | 8 ms (8 to 9) | 23 ms (19 to 23) | 0 of 363 |
+| next day | before the last changes | 9 ms (8 to 10) | 32 ms (21 to 34) | 6 of 363 |
+| next day | with the last changes, Jetty 9.4.48 | 10 ms (9 to 19) | 27 ms (23 to 116) | 8 of 363 |
+| next day | with the last changes, Jetty 9.4.58 (the table above) | 9 ms (8 to 10) | 21 ms (21 to 26) | 2 of 362 |
+
+The same code gave a p99 of 23 ms at night and 32 ms the next day, with other programs open on the laptop. So I can't tell the versions apart with three runs each. In 11 of the 12 runs the p99 was between 19 and 34 ms, and in one it was 116 ms.
 
 ### Contention: 10 accounts, 250/s, 3 runs of 120 seconds
 
@@ -73,23 +95,25 @@ Every transfer locks two of only 10 rows, so transfers wait for each other's loc
 
 | Run | Achieved | Requests | Failed | p50 | p95 | p99 | Max |
 |---|---|---|---|---|---|---|---|
-| 1 | 250/s | 30,000 | 0 | 4 ms | 9 ms | 29 ms | 187 ms |
-| 2 | 247.93/s | 30,000 | 0 | 4 ms | 8 ms | 23 ms | 121 ms |
-| 3 | 247.93/s | 30,000 | 0 | 4 ms | 10 ms | 29 ms | 143 ms |
-| **Median (range)** | 247.93/s (247.93 to 250) | | 0% | 4 ms (4 to 4) | 9 ms (8 to 10) | 29 ms (23 to 29) | 143 ms (121 to 187) |
+| 1 | 247.93/s | 30,000 | 0 | 4 ms | 11 ms | 35 ms | 214 ms |
+| 2 | 250/s | 30,000 | 0 | 4 ms | 13 ms | 53 ms | 176 ms |
+| 3 | 247.93/s | 30,000 | 0 | 5 ms | 19 ms | 106 ms | 303 ms |
+| **Median (range)** | 247.93/s (247.93 to 250) | | 0% | 4 ms (4 to 5) | 13 ms (11 to 19) | 53 ms (35 to 106) | 214 ms (176 to 303) |
 
-At 250/s, contention costs a little in the tail: the p99 median is 29 ms instead of 23 ms, and the median transfer is just as fast. Each of the 10 accounts is in about 50 transfers per second, and a lock is held for a few milliseconds, so a row is free most of the time. Pessimistic locking would start to hurt when one account gets close to 1 second divided by the lock time, a few hundred transfers per second on a single account. I did not test that point.
+I ran this series right after the steady one, on the same code. At 250/s, contention costs something in the tail: the p99 median is 53 ms instead of 21 ms, and the median transfer is just as fast. 13 of the 363 seconds were slow. In 7 of the 10 slowest seconds, 1 to 4 of the 10 connections were waiting for a row lock.
+
+Part of that difference is the laptop and not the locks: its load average was 3.4 when the steady series started and above 5 during this one. In the two earlier series on 10 accounts the p99 median was 29 ms and 38 ms. Each of the 10 accounts is in about 50 transfers per second, and a lock is held for a few milliseconds, so a row is free most of the time. Pessimistic locking would start to hurt when one account gets close to 1 second divided by the lock time, a few hundred transfers per second on a single account. I did not test that point.
 
 ### No money appeared or disappeared
 
-After each of the 20 runs in this report (16 on the current code and the 4 before and after runs), including the overloaded ones, this check returned 0 for every value:
+After each of the 20 runs in this report, including the overloaded ones, this check returned 0 for every value:
 - the sum of all ledger entries;
 - the sum of all balances (funding accounts included);
 - ledger entries minus 2 × completed transfers;
 - customer accounts with a negative balance;
 - accounts whose balance is not the sum of their own ledger entries.
 
-The server handled 523,495 transfers in these runs, warm-ups included, and all of them returned 201. The server never logged an error.
+The server handled 522,228 transfers in these runs, warm-ups included, and all of them returned 201. It never answered with an error and never logged one. The only server side trouble was the 27 connections it could not accept at 1,000/s.
 
 ## What caused the p99 spikes
 
@@ -154,14 +178,14 @@ The velocity count now runs before the database transaction opens (`FraudFactsCo
 
 ### What is left
 
-- At 250/s on the current code, none of the 363 seconds in the steady runs was slow, and 3 of 362 in the contention runs.
+- At 250/s on the current code, 2 of the 362 seconds in the steady runs were slow, and 13 of 363 in the contention runs.
 - At 400/s a few slow seconds are left: 3 of 31 in the capacity run, 12 and 2 in the two 120 second runs. In them, most connections are still `idle in transaction` (3.1 to 4.4 of 10), and some wait for the WAL (0.2 to 2.0, `IO/WalSync` and `LWLock/WALWrite`), which is Postgres writing its log to the Docker Desktop virtual disk. It is a small version of what happens past the limit (next point). I did not change anything for it. `synchronous_commit = off` would remove the WAL waits, but it can lose transfers that were already confirmed if Postgres crashes, so it is not an option for a ledger.
-- Past the limit, at 600/s, the connections are again mostly `idle in transaction` (5.3 of 10 in slow seconds), even though Redis is no longer inside the transaction. At the same time the Redis round trip went from 3 to 36 ms, Postgres used almost 2 cores and 45% of the slow seconds had a GC pause of 20 ms or more nearby. A transfer makes about 10 round trips to Postgres, and on this laptop each of them goes through Docker Desktop's port forwarding, like the Redis ping. When the laptop is overloaded, that path slows down, and every transaction holds its connection longer. That is a limit of this setup more than of the code: in a real deployment the app and the database talk over a normal network, without the port forward.
+- Past the limit, at 600/s, the connections are again mostly `idle in transaction` (5.7 of 10), even though Redis is no longer inside the transaction. In those seconds Postgres used 1.4 cores, the app 0.8, the slowest Redis round trip was 10 ms, and 63% of the seconds had a GC pause of 20 ms or more nearby. A transfer makes about 10 round trips to Postgres, and on this laptop each of them goes through Docker Desktop's port forwarding. When the laptop is overloaded, every round trip gets slower and every transaction holds its connection longer. I think that is a limit of this setup more than of the code, but I did not prove it: the test to run is the app inside the Docker network, without the port forward.
 
 ## Limits of this test
 
 - One laptop. The load generator takes CPU and memory from the same machine as the service.
-- In an earlier series on the old code, 1,000/s produced 3,681 failed requests. All of them were `Too many open files` inside the Gatling JVM: macOS allows one process 10,240 open files, and each queued user held a connection. The server returned zero errors then too. On the current code no request failed at any rate.
+- Above about 800/s the test measures the laptop more than the service: Gatling and the service both run into the limit of 10,240 open files per process.
 - Docker Desktop runs Postgres and Redis in a Linux VM, and its virtual disk, scheduling and port forwarding are not like a real server's.
 - The databases are fresh for every script run and grow from zero, so this doesn't show how the service behaves with millions of rows.
 - The capacity numbers are one 30 second run per rate, so a single stall can change a row a lot, and 30 seconds is short to see if a queue drains.
@@ -175,13 +199,15 @@ APP_JAVA_HOME=$(ls -d ~/.gradle/jdks/*21*/jdk-*/Contents/Home) scripts/load-test
 
 The script refuses to start unless `APP_JAVA_HOME` is a JDK 21, the version the service ships with. The arguments are a name, the number of accounts, seconds per run, repeats and one or more rates. Results, logs and the Gatling reports go to `build/load-test/`. At the end the script prints the table rows and the analysis of the slow seconds.
 
-The runs above, on the current code:
+The runs above:
 ```
-scripts/load-test.sh capacity 1000 30 1 50 100 200 300 400 500 600
-scripts/load-test.sh capacity-high 1000 30 1 700 800 1000
+scripts/load-test.sh capacity 1000 30 1 50 100 200 300 400 500
+scripts/load-test.sh overload 1000 30 1 600 700 800 1000
 scripts/load-test.sh steady 1000 120 3 250
 scripts/load-test.sh contention 10 120 3 250
 ```
+
+The capacity series also ran 600/s as its last rate. That row is replaced by the one from the overload series.
 
 The before and after comparison, run once on each version of the code:
 ```
