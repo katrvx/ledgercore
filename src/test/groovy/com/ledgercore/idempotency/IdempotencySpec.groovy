@@ -169,6 +169,7 @@ class IdempotencySpec extends Specification {
 
         then:
         duplicate.statusCode() == 409
+        duplicate.headers().firstValue("Retry-After").get() == "1"
         duplicate.headers().firstValue("Content-Type").get().startsWith("application/problem+json")
         json.parseText(duplicate.body()).detail == "a request with this Idempotency-Key is still in progress"
 
@@ -230,6 +231,30 @@ class IdempotencySpec extends Specification {
 
         cleanup:
         pool.shutdown()
+    }
+
+    def "a redis value that #reason is treated like no value"() {
+        given:
+        redis.set("idempotency:response:" + key, value)
+
+        when:
+        def first = client.post("/transfers", transfer(alice, bob, 100), key)
+        def retry = client.post("/transfers", transfer(alice, bob, 100), key)
+
+        then:
+        first.statusCode() == 201
+        retry.statusCode() == 201
+        retry.body() == first.body()
+        balance(alice) == 900
+
+        and: "the broken value was replaced by a real record"
+        json.parseText(redis.get("idempotency:response:" + key)).response.status == 201
+
+        where:
+        reason                        | value
+        "is not json"                 | 'not json at all'
+        "has no response"             | '{"requestHash":"abc"}'
+        "has a field from the future" | '{"requestHash":"abc","response":{"status":201,"location":"/transfers/1","body":"{}"},"version":2}'
     }
 
     def "a saved 422 survives when redis is flushed"() {
