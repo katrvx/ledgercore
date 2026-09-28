@@ -6,8 +6,11 @@ info:
     Accounts and money transfers with double-entry bookkeeping. All amounts are in minor units (for example cents for EUR).
     Every response has an X-Request-Id header. It is the X-Request-Id sent by the client when that is 1 to 64 letters,
     digits, dots, underscores or dashes, otherwise a new UUID. The same id is in every log line about the request and
-    in every problem body. Every error is application/problem+json, including unknown routes (404).
+    in every problem body. Every error is application/problem+json (RFC 9457, which replaced RFC 7807),
+    including unknown routes (404).
     A wrong method on a known path is also a 404. POST bodies must be application/json and at most 16384 bytes.
+    A JSON body with the same field twice is rejected with 400.
+    When the database can't be reached, every endpoint except /health answers 503 with a Retry-After header.
 
 servers:
   - url: http://localhost:8080
@@ -64,6 +67,8 @@ paths:
       responses:
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "201":
           description: Account created
           headers:
@@ -86,12 +91,15 @@ paths:
   /accounts/{id}:
     get:
       operationId: getAccount
-      summary: Get one account
+      summary: Get one customer account
+      description: System funding accounts are internal. Asking for one answers 404, like an account that does not exist.
       parameters:
         - $ref: "#/components/parameters/AccountId"
       responses:
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "200":
           description: The account
           content:
@@ -131,6 +139,8 @@ paths:
       responses:
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "200":
           description: One page of the account history
           content:
@@ -159,6 +169,8 @@ paths:
       responses:
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "201":
           description: Deposit completed, or the saved response of the first request with this key
           headers:
@@ -205,6 +217,8 @@ paths:
       responses:
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "201":
           description: Transfer completed, or the saved response of the first request with this key
           headers:
@@ -262,6 +276,8 @@ paths:
       responses:
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "200":
           description: The transfer
           content:
@@ -487,7 +503,7 @@ components:
 
     Problem:
       type: object
-      description: Error body from RFC 7807
+      description: Error body from RFC 9457, which replaced RFC 7807
       required: [type, title, status, detail]
       properties:
         type:
@@ -522,6 +538,12 @@ components:
             $ref: "#/components/schemas/Problem"
     Conflict:
       description: A request with the same Idempotency-Key is still being handled, retry in a moment
+      headers:
+        Retry-After:
+          description: Seconds to wait before the retry
+          schema:
+            type: integer
+            example: 1
       content:
         application/problem+json:
           schema:
@@ -534,6 +556,18 @@ components:
             $ref: "#/components/schemas/Problem"
     UnsupportedMediaType:
       description: The request body is not sent as application/json (parameters like charset and any letter case are fine)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ServiceUnavailable:
+      description: The database can't be reached right now. Nothing was changed, so the request can be sent again.
+      headers:
+        Retry-After:
+          description: Seconds to wait before the retry
+          schema:
+            type: integer
+            example: 1
       content:
         application/problem+json:
           schema:
