@@ -3,7 +3,7 @@ package com.ledgercore.http;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import org.slf4j.MDC;
 
-// error body from rfc 7807, requestId is an extension member the rfc allows
+// error body from rfc 9457 (it replaced rfc 7807), requestId is an extension member the rfc allows
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record Problem(String type, String title, int status, String detail, String requestId) {
 
@@ -25,6 +25,7 @@ public record Problem(String type, String title, int status, String detail, Stri
             case 415 -> "Unsupported Media Type";
             case 422 -> "Unprocessable Content";
             case 500 -> "Internal Server Error";
+            case 503 -> "Service Unavailable";
             default -> "Error";
         };
     }
