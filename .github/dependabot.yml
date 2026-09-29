@@ -13,6 +13,9 @@ updates:
     ignore:
       - dependency-name: "org.eclipse.jetty:jetty-bom"
         update-types: ["version-update:semver-major"]
+      # spock is built for one groovy major, see the suffix of spock-core
+      - dependency-name: "org.apache.groovy:*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directory: /
