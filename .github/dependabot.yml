@@ -25,6 +25,10 @@ updates:
       docker:
         patterns:
           - "*"
+    # the build, the load test and every published number use java 21, so only updates inside 21 are wanted
+    ignore:
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
