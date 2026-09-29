@@ -242,4 +242,4 @@ The budget costs nothing and can stay, or you can delete it in the console under
 
 1. **Billing was not linked to the project.** `gcloud services enable` failed with `UREQ_PROJECT_BILLING_NOT_FOUND`. Step 0 now links it and checks `billingEnabled`.
 2. **`gcloud billing budgets create` failed with `INVALID_ARGUMENT`**, probably because billing was not linked yet. I created the budget in the console instead, 12 GBP, because my billing account is in GBP.
-3. **zsh ate a letter of the Cloud SQL connection name.** `"$PROJECT_ID:$REGION:ledgercore-db"` became `ledgercore-demo:us-central1edgercore-db`, because in zsh `:l` after a variable means lowercase. The deploy failed until I fixed it. Now every variable has braces, and the connection name comes from `gcloud sql instances describe`.
+3. **zsh ate a letter of the Cloud SQL connection name.** `"$PROJECT_ID:$REGION:ledgercore-db"` became `your-project-id:us-central1edgercore-db`, because in zsh `:l` after a variable means lowercase. The deploy failed until I fixed it. Now every variable has braces, and the connection name comes from `gcloud sql instances describe`.
