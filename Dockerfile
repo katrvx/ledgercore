@@ -1,6 +1,6 @@
 # exact versions with digests, so the same commit always builds the same image
 # build on the machine's own platform: java bytecode runs anywhere, so gradle never needs emulation
-FROM --platform=$BUILDPLATFORM eclipse-temurin:21.0.12.1_1-jdk@sha256:4d06038800655fe1211760cd561de70ef2ed7a47f5d69255e9834414602b7026 AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21.0.12.1_1-jdk@sha256:3e3c176ffed168beb42c607be9bc1639b466cf00261a0fb04425562c9d0c5c2b AS build
 WORKDIR /src
 COPY gradlew settings.gradle.kts build.gradle.kts ./
 COPY gradle gradle
@@ -9,7 +9,7 @@ COPY src/main src/main
 RUN --mount=type=cache,target=/root/.gradle ./gradlew --no-daemon -q installDist
 
 # only this stage is built for the target platform (linux/amd64 for cloud run)
-FROM eclipse-temurin:21.0.12.1_1-jre@sha256:d7051a45dd955e4d5d1db4d3f4269fe13d1c6dff8cc6b7ef89fc8577b96c1982
+FROM eclipse-temurin:21.0.12.1_1-jre@sha256:cff19e6215689161eb6162c11b86b0c60ddf802164f2eaf48d570f8fb79a36c5
 RUN groupadd --system --gid 10001 ledgercore && useradd --system --uid 10001 --gid 10001 --no-create-home ledgercore
 COPY --from=build /src/build/install/ledgercore /app
 # numbers, not names, so kubernetes can check runAsNonRoot without reading /etc/passwd
