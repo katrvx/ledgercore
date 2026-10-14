@@ -4,7 +4,7 @@ plugins {
     application
     jacoco
     id("org.jooq.jooq-codegen-gradle") version "3.21.9"
-    id("io.gatling.gradle") version "3.15.1.3"
+    id("io.gatling.gradle") version "3.16.0"
 }
 
 group = "com.ledgercore"
@@ -21,7 +21,7 @@ repositories {
 }
 
 val jooqVersion = "3.21.9"
-val flywayVersion = "13.8.0"
+val flywayVersion = "13.10.0"
 
 // the fraud evaluation lives in its own source set, so it never ships inside the app
 val evaluation: SourceSet = sourceSets.create("evaluation") {
@@ -34,9 +34,9 @@ dependencies {
     implementation("com.sparkjava:spark-core:2.9.4")
     // spark pins jetty 9.4.48, this moves every jetty module to the last 9.4 release with its security fixes
     implementation(platform("org.eclipse.jetty:jetty-bom:9.4.58.v20250814"))
-    implementation("ch.qos.logback:logback-classic:1.6.4")
+    implementation("ch.qos.logback:logback-classic:1.6.5")
     implementation("tools.jackson.core:jackson-databind:3.2.3")
-    implementation("org.postgresql:postgresql:42.7.13")
+    implementation("org.postgresql:postgresql:42.7.14")
     implementation("com.zaxxer:HikariCP:7.1.0")
     implementation("org.flywaydb:flyway-core:$flywayVersion")
     implementation("org.flywaydb:flyway-database-postgresql:$flywayVersion")
@@ -50,7 +50,7 @@ dependencies {
     testImplementation(platform("org.apache.groovy:groovy-bom:4.0.33"))
     testImplementation("org.apache.groovy:groovy-json")
     testImplementation("org.apache.groovy:groovy-sql")
-    testImplementation("org.spockframework:spock-core:2.4-groovy-4.0")
+    testImplementation("org.spockframework:spock-core:2.5-groovy-4.0")
     testImplementation("org.testcontainers:testcontainers-postgresql:2.0.5")
     testImplementation(evaluation.output)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
